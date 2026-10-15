@@ -2,7 +2,7 @@
 
 Scripts and results from the FY2025 feasibility check (2026-10-15): can DOL Wage and Hour (WHD) violation cases be linked to H-1B and H-2B employers?
 
-The two employer tables (`filers_*_fy2025.csv`, about 12 MB) and all raw downloads are not in git; rebuild them with the scripts below. Needs Python 3 with pandas.
+The employer and application tables (`filers_*`), the database (`research.db`) and all raw downloads are not in git; rebuild them with the scripts below. Needs Python 3 with pandas and openpyxl.
 
 | File | What it is |
 | --- | --- |
@@ -12,10 +12,13 @@ The two employer tables (`filers_*_fy2025.csv`, about 12 MB) and all raw downloa
 | name_match_benchmark.csv | How well name rules re-find the 144 employers in both programs, using tax ID as the answer key |
 | scripts/employer_keys.py | Name cleaning and ZIP/tax ID helpers |
 | scripts/provenance.py | Writes and checks the `.manifest.json` beside each data file |
-| scripts/build_filers.py | Turns the raw disclosure files (converted to CSV) into the employer and application tables |
+| scripts/xlsx_to_csv.py | Streams a DOL disclosure workbook to CSV, skipping blank padding rows |
+| scripts/build_filers.py | Turns the disclosure CSVs into the employer and application tables; a case number seen in several quarters is kept once, with its latest record |
 | scripts/name_match_benchmark.py | Produces name_match_benchmark.csv |
 | scripts/fetch_whd.py | Downloads WHD enforcement data (key from env var DOL_API_KEY, sent in the URL). 2,000 rows a page, backs off on rate limits, re-run with the same output file to resume |
 | scripts/match_whd.py | Match rates of WHD H-1B/H-2B violation cases to filers |
+| scripts/build_db.py | Builds `research.db` (SQLite) from the tables above; see Database |
+| research.db (not in git) | The database |
 | whd_match_rates.csv | Output of match_whd.py (run 2026-10-15 on 370,964 WHD cases) |
 | tests/ | Tests for manifests, the employer build and the WHD download (no network needed) |
 
@@ -30,10 +33,25 @@ Every data file a script writes gets a manifest next to it: `X.csv` → `X.csv.m
 
 A checksum is a fingerprint of the file: change one character and it changes. `provenance.verify_manifest("X.csv")` raises an error if a file no longer matches its manifest. WHD rows also keep `load_dt`, the date DOL loaded each case, and the application tables keep every DOL case number.
 
+## Database
+
+`build_db.py` loads everything into one SQLite file. Each data row has a `source_id` pointing to the `sources` row of the file it came from, and the build refuses any input that no longer matches its manifest.
+
+| Table | One row per | Key columns |
+| --- | --- | --- |
+| sources | input file | file, sha256, rows, urls, created_utc, manifest |
+| employers | employer per program (H-1B or H-2B) | employer_id, program, name_clean, state, zip5, fein, n_applications, willful_violator |
+| applications | visa application | case_number, employer_id, case_status, visa_class |
+| violation_cases | WHD enforcement case | case_id, names, address, dates, back wages, fines, violation counts by law, load_dt |
+| matches | WHD case linked to an employer | case_id, employer_id, method, est_false_match_rate, whd_name_field, employer_name_field |
+
+WHD cases have no tax ID, so `matches` links them by cleaned name + ZIP, or failing that cleaned name + state, using the WHD trade or legal name against the employer's name or DBA. `est_false_match_rate` is that rule's false-match rate on the tax-ID benchmark (`name_match_benchmark.csv`).
+
 ## Rebuilding
 
 To rebuild the employer tables, download the FY2025 LCA (Q1-Q4) and H-2B disclosure files from
-https://www.dol.gov/agencies/eta/foreign-labor/performance, convert each sheet to CSV, then:
+https://www.dol.gov/agencies/eta/foreign-labor/performance, convert each to CSV with
+`python3 scripts/xlsx_to_csv.py IN.xlsx OUT.csv --source-url URL`, then (quarters in date order):
 
     python3 scripts/build_filers.py filers_lca_fy2025.csv LCA_Q1.csv LCA_Q2.csv LCA_Q3.csv LCA_Q4.csv
     python3 scripts/build_filers.py filers_h2b_fy2025.csv H2B_FY2025.csv
@@ -42,6 +60,11 @@ To re-run the WHD match (raw download about 70 MB and 25 minutes; key in env var
 
     python3 scripts/fetch_whd.py /tmp/whd.csv
     python3 scripts/match_whd.py /tmp/whd.csv filers_lca_fy2025.csv filers_h2b_fy2025.csv .
+
+To build the database:
+
+    python3 scripts/build_db.py research.db --lca filers_lca_fy2025.csv --h2b filers_h2b_fy2025.csv \
+        --whd /tmp/whd.csv --benchmark name_match_benchmark.csv
 
 To run the tests (from the repo root):
 
