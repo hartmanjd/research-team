@@ -1,0 +1,49 @@
+{
+  "file": "whd_match_rates.csv",
+  "sha256": "23ecd0678d73e01fa1f85d2680c38f4c87375309e7493df43943078d1dc262e6",
+  "bytes": 1068,
+  "rows": 8,
+  "created_utc": "2026-10-15T22:05:52+00:00",
+  "script": "match_whd.py",
+  "script_sha256": "c7b2b95faaa91880b85cec459f326721a28fb603445dae9f7139b7d90a260429",
+  "python": "3.13.16",
+  "inputs": [
+    {
+      "file": "whd.csv",
+      "sha256": "38a09889ad44a79f6b8ef4ac0903c2f5a2232a88862d1d60f6306af2b40f48b3",
+      "bytes": 67577691,
+      "rows": 370964
+    },
+    {
+      "file": "filers_lca_fy2025.csv",
+      "sha256": "2891e90fec5c739bbd23e561b05900cef2070d95887b6c0cd8e1a2123b1c3f2e",
+      "bytes": 11246368,
+      "rows": 70915
+    },
+    {
+      "file": "filers_h2b_fy2025.csv",
+      "sha256": "83f5d6010740bda2314e3feccad00fa2b7a999a606a98150768a082e83e33174",
+      "bytes": 1672539,
+      "rows": 10035
+    }
+  ],
+  "sources": [],
+  "params": {
+    "rules": {
+      "exact name": [
+        "name_raw"
+      ],
+      "clean name": [
+        "name_clean"
+      ],
+      "clean name + state": [
+        "name_clean",
+        "state"
+      ],
+      "clean name + ZIP": [
+        "name_clean",
+        "zip5"
+      ]
+    }
+  }
+}

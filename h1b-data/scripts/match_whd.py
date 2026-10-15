@@ -5,12 +5,15 @@ using both the WHD trade name and legal name. Reports the share of
 H-1B-violation cases (vs LCA filers) and H-2B-violation cases (vs H-2B filers)
 that find at least one filer.
 
+Writes OUT_DIR/whd_match_rates.csv and its .manifest.json (input checksums).
+
 Usage: python3 match_whd.py whd.csv filers_lca.csv filers_h2b.csv OUT_DIR
 """
 import os, sys
 import pandas as pd
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from employer_keys import raw_name, clean_name, zip5
+from provenance import write_manifest
 
 RULES = {"exact name": ["name_raw"], "clean name": ["name_clean"],
          "clean name + state": ["name_clean", "state"], "clean name + ZIP": ["name_clean", "zip5"]}
@@ -61,7 +64,9 @@ def main(whd_p, lca_p, h2b_p, out_dir):
     res = rates(whd[num("h1b_violtn_cnt") > 0], lca, "H-1B violation cases vs H-1B filers")
     res += rates(whd[num("h2b_violtn_cnt") > 0], h2b, "H-2B violation cases vs H-2B filers")
     df = pd.DataFrame(res)
-    df.to_csv(os.path.join(out_dir, "whd_match_rates.csv"), index=False)
+    out = os.path.join(out_dir, "whd_match_rates.csv")
+    df.to_csv(out, index=False)
+    write_manifest(out, __file__, inputs=[whd_p, lca_p, h2b_p], params={"rules": RULES})
     print(f"WHD rows={len(whd)}  H-1B violation cases={(num('h1b_violtn_cnt') > 0).sum()}"
           f"  H-2B violation cases={(num('h2b_violtn_cnt') > 0).sum()}")
     print(df.to_string(index=False))

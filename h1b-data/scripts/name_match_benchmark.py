@@ -6,10 +6,14 @@ H-1B (LCA) and H-2B programs give a labeled set: we can see how often each
 name rule finds the right employer (recall) and how often a name-rule match
 points to a different FEIN (false-match rate).
 
+Writes OUT.csv and OUT.csv.manifest.json (input checksums).
+
 Usage: python3 name_match_benchmark.py filers_lca.csv filers_h2b.csv OUT.csv
 """
-import sys
+import os, sys
 import pandas as pd
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from provenance import write_manifest
 
 
 def explode_fein(df):
@@ -42,6 +46,7 @@ def main(lca_p, h2b_p, out):
                      "false_match_rate": wrong / max(len(pairs), 1)})
     res = pd.DataFrame(rows)
     res.to_csv(out, index=False)
+    write_manifest(out, __file__, inputs=[lca_p, h2b_p], params={"rules": rules})
     print(res.to_string(index=False))
 
     # How badly do names fragment one employer? (same FEIN, several names)
