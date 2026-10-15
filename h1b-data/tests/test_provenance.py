@@ -95,6 +95,21 @@ class BuildFilersTests(unittest.TestCase):
         self.assertEqual(emp["BETA FARMS"]["willful_violator"], "True")
         self.assertEqual(emp["BETA FARMS"]["source_files"], "lca_q2.csv")
 
+    def test_a_case_in_two_quarters_keeps_its_latest_record(self):
+        q3 = os.path.join(self.d, "lca_q3.csv")
+        with open(self.q1, newline="") as f:
+            first = next(csv.DictReader(f))
+        write_csv(q3, [{**first, "CASE_STATUS": "Certified - Withdrawn"}])  # I-200-1 again
+        out = os.path.join(self.d, "again.csv")
+        with mock.patch("sys.stdout", io.StringIO()):
+            build_filers.main([out, self.q1, self.q2, q3])
+        apps = read_csv(os.path.join(self.d, "again_applications.csv"))
+        i1 = [a for a in apps if a["case_number"] == "I-200-1"]
+        self.assertEqual([(a["case_status"], a["source_file"]) for a in i1],
+                         [("Certified - Withdrawn", "lca_q3.csv")])
+        acme = [e for e in read_csv(out) if e["name_clean"] == "ACME SOFTWARE"][0]
+        self.assertEqual((acme["n_applications"], acme["n_certified"]), ("2", "1"))
+
     def test_no_contact_fields_in_outputs(self):
         for name in ("filers.csv", "filers_applications.csv"):
             text = read_text(os.path.join(self.d, name))

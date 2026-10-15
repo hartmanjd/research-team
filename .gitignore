@@ -1,6 +1,8 @@
 # Raw and derived data stay out of git (rebuild with the scripts)
 h1b-data/filers_*.csv
 *.xlsx
+*.db
+*.db.manifest.json
 whd*.csv
 !h1b-data/whd_match_rates.csv
 __pycache__/

@@ -9,6 +9,10 @@ Writes two tables, each with a .manifest.json (checksums, inputs, sources):
                         visa class, source file and the employer key, so every
                         employer row can be traced back to its exact filings.
 
+Pass the inputs in date order (Q1 before Q2 ...). A case number that appears
+in more than one file (e.g. certified in Q1, withdrawn in Q3) is kept once,
+with its latest record, so it is not counted twice.
+
 Usage: python3 build_filers.py OUT.csv IN1.csv [IN2.csv ...] [--source-url URL ...]
 """
 import argparse, os, sys
@@ -36,7 +40,8 @@ def load(ins):
         df["source_file"] = os.path.basename(p)
         frames.append(df)
     df = pd.concat(frames, ignore_index=True)
-    df = df[df.CASE_NUMBER.str.strip() != ""].copy()  # sheets carry many blank padding rows
+    df = df[df.CASE_NUMBER.str.strip() != ""]  # sheets carry many blank padding rows
+    df = df.drop_duplicates("CASE_NUMBER", keep="last").copy()  # latest decision wins
     if "VISA_CLASS" not in df:
         df["VISA_CLASS"] = "H-2B"
     for c in ["TRADE_NAME_DBA", "H-1B_DEPENDENT", "WILLFUL_VIOLATOR", "EMPLOYER_FEIN"]:
