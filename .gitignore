@@ -6,3 +6,7 @@ h1b-data/filers_*.csv
 whd*.csv
 !h1b-data/whd_match_rates.csv
 __pycache__/
+*.part
+*.db.gz
+# Windows adds these to browser downloads under WSL
+*:Zone.Identifier

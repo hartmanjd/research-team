@@ -2,7 +2,7 @@
 
 Run from the repo root:  python3 -m unittest discover dashboard/tests
 """
-import io, os, sqlite3, sys, tempfile, unittest
+import gzip, hashlib, io, os, pathlib, sqlite3, sys, tempfile, unittest
 from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -105,6 +105,34 @@ class QueryTests(unittest.TestCase):
     def test_missing_database_gives_a_clear_error(self):
         with self.assertRaisesRegex(FileNotFoundError, "build_db.py"):
             queries.connect(os.path.join(self.d, "nope.db"))
+
+
+class DownloadTests(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.gz = os.path.join(self.d, "research.db.gz")
+        with open(make_db(self.d), "rb") as f, gzip.open(self.gz, "wb") as g:
+            g.write(f.read())
+        self.url = pathlib.Path(self.gz).as_uri()
+        self.sha = hashlib.sha256(open(self.gz, "rb").read()).hexdigest()
+        self.target = os.path.join(self.d, "out", "research.db")
+        os.makedirs(os.path.dirname(self.target))
+
+    def test_download_unpacks_a_working_database(self):
+        queries.download_db(self.target, self.url, self.sha)
+        con = queries.connect(self.target)
+        self.assertGreater(len(queries.search_employers(con, "acme")), 0)
+        self.assertEqual(os.listdir(os.path.dirname(self.target)), ["research.db"])
+
+    def test_wrong_checksum_leaves_nothing_behind(self):
+        with self.assertRaisesRegex(ValueError, "checksum"):
+            queries.download_db(self.target, self.url, "0" * 64)
+        self.assertEqual(os.listdir(os.path.dirname(self.target)), [])
+
+    def test_existing_database_is_not_downloaded_again(self):
+        open(self.target, "w").close()
+        queries.download_db(self.target, "file:///does/not/exist.gz", "0" * 64)
+        self.assertEqual(os.path.getsize(self.target), 0)
 
 
 if __name__ == "__main__":
