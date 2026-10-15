@@ -155,6 +155,73 @@ def dol_file_url(csv_name, urls):
     return ""
 
 
+def _watchlist_filter(program, since_year, visa_violations_only, min_applications, state):
+    where, args = ["e.n_applications >= ?"], [min_applications]
+    if program:
+        where.append("e.program = ?")
+        args.append(program)
+    if state:
+        where.append("e.state = ?")
+        args.append(state)
+    if since_year:
+        where.append("v.findings_end_date >= ?")
+        args.append(f"{int(since_year):04d}")
+    if visa_violations_only:
+        where.append("CASE e.program WHEN 'H-1B' THEN v.h1b_violtn_cnt WHEN 'H-2B' THEN v.h2b_violtn_cnt END > 0")
+    return " AND ".join(where), args
+
+
+def watchlist(con, program=None, since_year=None, visa_violations_only=False, min_applications=1,
+              state=None):
+    """Visa employers with linked WHD cases, one row per employer, most back wages first.
+
+    `since_year` keeps cases whose findings end in or after that year. `visa_violations_only` keeps
+    cases with violations under the employer's own visa program (H-1B or H-2B). Cases with no
+    findings date are dropped when `since_year` is set. `zip_links` counts the cases linked by
+    name + ZIP, the stricter of the two match rules.
+    """
+    where, args = _watchlist_filter(program, since_year, visa_violations_only, min_applications, state)
+    return rows(con, f"""
+        SELECT e.employer_id, e.employer_name, e.dba, e.city, e.state, e.program, e.naics,
+               e.n_applications, e.n_certified, e.willful_violator, e.h1b_dependent,
+               COUNT(*) AS n_cases,
+               SUM(m.method = 'clean name + ZIP') AS zip_links,
+               COALESCE(SUM(v.case_violtn_cnt), 0) AS violations,
+               COALESCE(SUM(v.h1b_violtn_cnt), 0) AS h1b_violations,
+               COALESCE(SUM(v.h2b_violtn_cnt), 0) AS h2b_violations,
+               COALESCE(SUM(v.bw_atp_amt), 0) AS back_wages,
+               COALESCE(SUM(v.ee_violtd_cnt), 0) AS workers,
+               COALESCE(SUM(v.cmp_assd), 0) AS penalties,
+               MAX(NULLIF(v.findings_end_date, '')) AS latest_case
+        FROM matches m JOIN employers e USING (employer_id) JOIN violation_cases v USING (case_id)
+        WHERE {where}
+        GROUP BY e.employer_id
+        ORDER BY back_wages DESC, n_cases DESC, e.employer_id""", *args)
+
+
+def watchlist_totals(con, **filters):
+    """Totals for the watchlist, counting each WHD case once.
+
+    A case can link to several employer rows (one company at two addresses, or in both programs),
+    so adding up the watchlist rows would count it more than once.
+    """
+    where, args = _watchlist_filter(filters.get("program"), filters.get("since_year"),
+                                    filters.get("visa_violations_only", False),
+                                    filters.get("min_applications", 1), filters.get("state"))
+    return rows(con, f"""
+        SELECT COUNT(*) AS cases, COALESCE(SUM(bw_atp_amt), 0) AS back_wages,
+               COALESCE(SUM(cmp_assd), 0) AS penalties
+        FROM violation_cases WHERE case_id IN (
+            SELECT m.case_id
+            FROM matches m JOIN employers e USING (employer_id) JOIN violation_cases v USING (case_id)
+            WHERE {where})""", *args)[0]
+
+
+def states(con):
+    return [r["state"] for r in rows(con, "SELECT DISTINCT state FROM employers "
+                                          "WHERE state != '' ORDER BY state")]
+
+
 def match_label(method, rate):
     """Plain-language confidence for a name-based link."""
     pct = f"{rate:.0%}" if rate is not None else "an unknown share"
