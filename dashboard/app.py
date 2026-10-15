@@ -20,6 +20,10 @@ def money(x):
     return f"${x:,.0f}"
 
 
+def count(x):
+    return "-" if x is None else f"{x:,}"
+
+
 def table(rows, columns, rename=None):
     df = pd.DataFrame(rows, columns=columns)
     return df.rename(columns=rename or {})
@@ -100,12 +104,14 @@ def employer_view(con, employer_id):
                             f"{v['street_addr_1_txt']}, {v['cty_nm']}, {v['st_cd']} {v['zip_cd']}")
                 st.markdown(f"**Period checked:** {(v['findings_start_date'] or '')[:10]} to "
                             f"{(v['findings_end_date'] or '')[:10]}")
+                # Text cells throughout: blanks mixed with numbers break Streamlit's table conversion.
                 st.table(pd.DataFrame([
-                    ["All laws", v["case_violtn_cnt"], money(v["bw_atp_amt"] or 0), v["ee_violtd_cnt"]],
-                    ["H-1B", v["h1b_violtn_cnt"], money(v["h1b_bw_atp_amt"] or 0), ""],
-                    ["H-2B", v["h2b_violtn_cnt"], money(v["h2b_bw_atp_amt"] or 0), ""],
-                    ["H-2A", v["h2a_violtn_cnt"], "", ""],
-                    ["Minimum wage / overtime (FLSA)", v["flsa_violtn_cnt"], "", ""],
+                    ["All laws", count(v["case_violtn_cnt"]), money(v["bw_atp_amt"] or 0),
+                     count(v["ee_violtd_cnt"])],
+                    ["H-1B", count(v["h1b_violtn_cnt"]), money(v["h1b_bw_atp_amt"] or 0), ""],
+                    ["H-2B", count(v["h2b_violtn_cnt"]), money(v["h2b_bw_atp_amt"] or 0), ""],
+                    ["H-2A", count(v["h2a_violtn_cnt"]), "", ""],
+                    ["Minimum wage / overtime (FLSA)", count(v["flsa_violtn_cnt"]), "", ""],
                 ], columns=["Law", "Violations", "Back wages", "Workers"]).set_index("Law"))
                 st.markdown(f"**Penalties assessed:** {money(v['cmp_assd'] or 0)}")
                 st.info(q.match_label(v["method"], v["est_false_match_rate"]) +
@@ -123,12 +129,12 @@ def employer_view(con, employer_id):
               {"case_number": "Case number", "case_status": "Status", "visa_class": "Visa",
                "fein": "Tax ID", "source_file": "DOL file", "dol_file_url": "Source"}),
         column_config={"Source": st.column_config.LinkColumn(display_text="DOL file")},
-        hide_index=True, use_container_width=True)
+        hide_index=True, width="stretch")
 
     with st.expander("Where this page's data comes from"):
         st.markdown(f"Employer row: `{e['source_file']}` (sha256 `{e['source_sha256'][:12]}…`, "
                     f"built {e['source_created_utc']}) from {e['source_urls'].replace(';', ', ')}")
-        st.dataframe(pd.DataFrame(q.sources(con)), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(q.sources(con)), hide_index=True, width="stretch")
 
 
 def main():
