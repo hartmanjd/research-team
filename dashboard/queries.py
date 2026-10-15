@@ -3,12 +3,17 @@
 Plain functions over a sqlite3 connection, returning lists of dicts, so they can
 be tested without Streamlit. See h1b-data/README.md for the tables.
 """
-import os, sqlite3, sys
+import gzip, hashlib, os, shutil, sqlite3, sys, urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "h1b-data", "scripts"))
 from employer_keys import clean_name  # noqa: E402
 
 DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "h1b-data", "research.db")
+
+# A gzipped copy of research.db published as a GitHub release asset, for hosts (like Streamlit
+# Cloud) that only have the git checkout. The checksum is of the .gz file at that URL.
+DB_URL = "https://github.com/hartmanjd/research-team/releases/download/data-2026-10-15/research.db.gz"
+DB_SHA256 = "02e7ff6c96e2ac4cd8194bb8f9db7d581dd096e59c42a74f174126e50b931c67"
 
 
 def connect(path=None):
@@ -20,6 +25,37 @@ def connect(path=None):
     con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False)
     con.row_factory = sqlite3.Row
     return con
+
+
+def download_db(path=None, url=None, sha256=None):
+    """Download the gzipped database to `path` if it is not there yet, and return the path.
+
+    The download is checked against its SHA-256 before it is unpacked, and written under a
+    temporary name first, so a failed or wrong download never leaves a database behind.
+    """
+    path = os.path.abspath(path or os.environ.get("RESEARCH_DB") or DEFAULT_DB)
+    if os.path.exists(path):
+        return path
+    url = url or os.environ.get("RESEARCH_DB_URL") or DB_URL
+    sha256 = sha256 or os.environ.get("RESEARCH_DB_SHA256") or DB_SHA256
+    gz, part = path + ".gz.part", path + ".part"
+    try:
+        digest = hashlib.sha256()
+        with urllib.request.urlopen(url) as r, open(gz, "wb") as f:
+            for chunk in iter(lambda: r.read(1 << 20), b""):
+                digest.update(chunk)
+                f.write(chunk)
+        if digest.hexdigest() != sha256:
+            raise ValueError(f"Downloaded database from {url} has checksum {digest.hexdigest()}, "
+                             f"expected {sha256}")
+        with gzip.open(gz, "rb") as src, open(part, "wb") as dst:
+            shutil.copyfileobj(src, dst, 1 << 20)
+        os.replace(part, path)
+    finally:
+        for tmp in (gz, part):
+            if os.path.exists(tmp):
+                os.remove(tmp)
+    return path
 
 
 def rows(con, sql, *args):

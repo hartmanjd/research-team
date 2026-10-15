@@ -13,7 +13,12 @@ st.set_page_config(page_title="Employer lookup", layout="wide")
 
 @st.cache_resource
 def db():
-    return q.connect()
+    try:
+        return q.connect()
+    except FileNotFoundError:
+        with st.spinner("Downloading the database (about 55 MB, first start only)..."):
+            q.download_db()
+        return q.connect()
 
 
 def money(x):
@@ -140,7 +145,7 @@ def employer_view(con, employer_id):
 def main():
     try:
         con = db()
-    except FileNotFoundError as err:
+    except (OSError, ValueError) as err:  # no database, or its download failed
         st.error(str(err))
         return
     employer_id = st.query_params.get("employer")
