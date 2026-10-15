@@ -30,8 +30,10 @@ def manifest_path(path):
 
 
 def describe(path):
+    """Checksum and size of any file; row count for CSVs only (None otherwise)."""
+    rows = count_rows(path) if path.lower().endswith(".csv") else None
     return {"file": os.path.basename(path), "sha256": sha256(path),
-            "bytes": os.path.getsize(path), "rows": count_rows(path)}
+            "bytes": os.path.getsize(path), "rows": rows}
 
 
 def write_manifest(path, script, inputs=(), sources=(), params=None):
