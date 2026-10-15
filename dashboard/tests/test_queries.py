@@ -98,6 +98,31 @@ class QueryTests(unittest.TestCase):
         self.assertEqual((e["source_file"], e["source_urls"]), ("filers_lca.csv", LCA_URL))
         self.assertIsNone(queries.employer(self.con, 999999))
 
+    def test_watchlist_ranks_employers_with_cases_by_back_wages(self):
+        w = queries.watchlist(self.con)
+        self.assertEqual([(r["employer_name"], r["state"], r["program"]) for r in w],
+                         [("Acme Software LLC", "TX", "H-1B"), ("Acme Software", "TX", "H-2B")])
+        top = w[0]
+        self.assertEqual((top["n_cases"], top["zip_links"], top["back_wages"], top["penalties"]),
+                         (2, 1, 1500.0, 250.0))
+        self.assertEqual((top["h1b_violations"], top["latest_case"]), (2, "2023-02-01"))
+
+    def test_watchlist_filters(self):
+        names = lambda **kw: [(r["program"], r["n_cases"]) for r in queries.watchlist(self.con, **kw)]
+        self.assertEqual(names(program="H-2B"), [("H-2B", 2)])
+        self.assertEqual(names(state="CA"), [])
+        self.assertEqual(names(since_year=2020), [("H-1B", 1), ("H-2B", 1)])
+        self.assertEqual(names(visa_violations_only=True), [("H-1B", 1)])  # case 10 has H-1B, not H-2B
+        self.assertEqual(names(min_applications=2), [("H-1B", 2)])
+        self.assertIn("TX", queries.states(self.con))
+
+    def test_watchlist_totals_count_each_case_once(self):
+        # Cases 10 and 11 each link to both Acme TX rows (H-1B and H-2B).
+        self.assertEqual(sum(r["n_cases"] for r in queries.watchlist(self.con)), 4)
+        t = queries.watchlist_totals(self.con)
+        self.assertEqual((t["cases"], t["back_wages"], t["penalties"]), (2, 1500.0, 250.0))
+        self.assertEqual(queries.watchlist_totals(self.con, program="H-1B", since_year=2020)["cases"], 1)
+
     def test_database_is_opened_read_only(self):
         with self.assertRaises(sqlite3.OperationalError):
             self.con.execute("DELETE FROM employers")

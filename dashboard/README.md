@@ -1,6 +1,9 @@
 # Employer dashboard
 
-A Streamlit app for looking up an H-1B or H-2B employer in `h1b-data/research.db`: its visa applications, the Wage and Hour (WHD) enforcement cases linked to it, how each case was linked, and the DOL file every number came from. The database is opened read-only.
+A Streamlit app over `h1b-data/research.db`, opened read-only. It has two pages, chosen in the sidebar:
+
+- **Employer lookup:** search for an H-1B or H-2B employer and see its visa applications, the Wage and Hour (WHD) enforcement cases linked to it, how each case was linked, and the DOL file every number came from.
+- **Watchlist:** every visa employer with linked WHD cases in one sortable table, filtered by program, state, case date, number of applications and visa-program violations. Clicking a row opens that employer. The filters are kept in the address bar, so a filtered list can be bookmarked or shared.
 
 ## Run it
 
@@ -38,7 +41,7 @@ After rebuilding `research.db`, gzip it (`gzip -k h1b-data/research.db`), upload
 
 | File | What it is |
 | --- | --- |
-| app.py | The Streamlit page: search, then one page per employer |
+| app.py | The Streamlit pages: Employer lookup, Watchlist, and one page per employer |
 | queries.py | The database lookups the page uses (plain Python, no Streamlit) |
 | tests/test_queries.py | Tests for the lookups on a small made-up database |
 
