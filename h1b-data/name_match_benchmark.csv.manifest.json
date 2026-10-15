@@ -1,0 +1,43 @@
+{
+  "file": "name_match_benchmark.csv",
+  "sha256": "50ccf36f608e0ffe118e0999aa8e3b48da23a2130e3837680239e81bf62387b2",
+  "bytes": 367,
+  "rows": 4,
+  "created_utc": "2026-10-15T22:05:55+00:00",
+  "script": "name_match_benchmark.py",
+  "script_sha256": "6d8bc54e1e9f2f44e75b729181c9e7ad08cc635a23c60d6e5e7da37507e7c58e",
+  "python": "3.13.16",
+  "inputs": [
+    {
+      "file": "filers_lca_fy2025.csv",
+      "sha256": "2891e90fec5c739bbd23e561b05900cef2070d95887b6c0cd8e1a2123b1c3f2e",
+      "bytes": 11246368,
+      "rows": 70915
+    },
+    {
+      "file": "filers_h2b_fy2025.csv",
+      "sha256": "83f5d6010740bda2314e3feccad00fa2b7a999a606a98150768a082e83e33174",
+      "bytes": 1672539,
+      "rows": 10035
+    }
+  ],
+  "sources": [],
+  "params": {
+    "rules": {
+      "exact name": [
+        "name_raw"
+      ],
+      "clean name": [
+        "name_clean"
+      ],
+      "clean name + state": [
+        "name_clean",
+        "state"
+      ],
+      "clean name + ZIP": [
+        "name_clean",
+        "zip5"
+      ]
+    }
+  }
+}
