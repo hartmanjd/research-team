@@ -3,12 +3,14 @@
 Plain functions over a sqlite3 connection, returning lists of dicts, so they can
 be tested without a web server. See h1b-data/README.md for the tables.
 """
-import gzip, hashlib, os, re, shutil, sqlite3, sys, urllib.request
+import csv, datetime, gzip, hashlib, os, re, shutil, sqlite3, sys, urllib.request
+from functools import lru_cache
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "h1b-data", "scripts"))
 from employer_keys import clean_name, fein as clean_fein  # noqa: E402
 
 DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "h1b-data", "research.db")
+DEBARMENTS_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "h1b-data", "debarments.csv")
 
 # A gzipped copy of research.db published as a GitHub release asset, for hosts (like Render)
 # that only have the git checkout. The checksum is of the .gz file at that URL.
@@ -600,3 +602,76 @@ def match_label(method, rate):
 def sources(con):
     return rows(con, "SELECT source_id, file, rows, sha256, urls, created_utc, script FROM sources"
                      " ORDER BY source_id")
+
+
+# DOL debarment lists (h1b-data/debarments.csv, made by parse_debarments.py). The list is small and is
+# kept in git rather than in research.db, so it can be refreshed without rebuilding the database.
+
+def _debarment_keys(entity):
+    """Cleaned names an entry can match: the whole name and each part around d/b/a or aka."""
+    parts = re.split(r"\b(?:d/b/a|dba|aka)\b:?|;", entity, flags=re.I)
+    return {k for k in (clean_name(x) for x in [entity, *parts]) if k}
+
+
+@lru_cache(maxsize=4)
+def load_debarments(path=None):
+    path = path or DEBARMENTS_CSV
+    if not os.path.exists(path):
+        return ()
+    with open(path, newline="", encoding="utf-8") as f:
+        out = []
+        for i, r in enumerate(csv.DictReader(f)):
+            out.append({**r, "debarment_id": i + 1, "keys": frozenset(_debarment_keys(r["entity"]))})
+        return tuple(out)
+
+
+def debarment_status(d, today=None):
+    """'active' while the debarment period runs (or it is permanent), 'ended' after, 'starts later' before."""
+    today = (today or datetime.date.today()).isoformat()
+    if d["start_date"] and d["start_date"] > today:
+        return "starts later"
+    return "active" if d["end_date"] == "permanent" or d["end_date"] >= today else "ended"
+
+
+def _public(d, today=None):
+    out = {k: v for k, v in d.items() if k not in ("keys", "name_clean")}
+    out["status"] = debarment_status(d, today)
+    out["match"] = ("Same cleaned name and state as the DOL entry" if d["state"] else
+                    "Same cleaned name; DOL's H-1B list gives no address, so the state is not checked")
+    return out
+
+
+def employer_debarments(con, employer_id, path=None, today=None):
+    """DOL debarment entries matching this employer by cleaned name (or DBA), and state when DOL gives one.
+
+    Each entry counts this employer's applications decided inside the debarment period."""
+    e = rows(con, "SELECT name_clean, dba_clean, state FROM employers WHERE employer_id = ?", employer_id)
+    if not e:
+        return []
+    names = {n for n in (e[0]["name_clean"], e[0]["dba_clean"]) if n}
+    out = []
+    for d in load_debarments(path):
+        if names & d["keys"] and (not d["state"] or d["state"] == e[0]["state"]):
+            end = "9999-12-31" if d["end_date"] == "permanent" else d["end_date"]
+            during = rows(con, """SELECT COUNT(*) AS n FROM applications WHERE employer_id = ?
+                                  AND substr(decision_date, 1, 10) BETWEEN ? AND ?""",
+                          employer_id, d["start_date"] or "0000-01-01", end)[0]["n"]
+            out.append({**_public(d, today), "applications_during": during})
+    return out
+
+
+def debarments(con, path=None, today=None):
+    """Every DOL debarment entry, each with the visa employers in the data that match it."""
+    entries = load_debarments(path)
+    by_key = {}
+    for e in rows(con, "SELECT employer_id, name_clean, dba_clean, state FROM employers"):
+        for n in {e["name_clean"], e["dba_clean"]} - {None, ""}:
+            by_key.setdefault(n, []).append(e)
+    out = []
+    for d in entries:
+        ids = sorted({e["employer_id"] for k in d["keys"] for e in by_key.get(k, [])
+                      if not d["state"] or e["state"] == d["state"]})
+        out.append({**_public(d, today), "employers": [r for i in ids for r in rows(con, """
+            SELECT employer_id, employer_name, program, city, state, n_applications FROM employers
+            WHERE employer_id = ?""", i)]})
+    return out

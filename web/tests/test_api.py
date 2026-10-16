@@ -110,6 +110,12 @@ class ApiTests(unittest.TestCase):
         self.assertIn("Visa Employer Watch", page.text)
         self.assertEqual(self.client.get("/app.js").status_code, 200)
 
+    def test_debarments(self):
+        rows = self.client.get("/api/debarments").json()
+        self.assertTrue(rows)
+        self.assertTrue({"program", "entity", "status", "employers", "source_url"} <= set(rows[0]))
+        self.assertIn("debarments", self.client.get(f"/api/employers/{self.acme_tx()['employer_id']}").json())
+
     def test_mcp_address_is_published(self):
         mcp_url = "https://visa-employer-watch.onrender.com/mcp"
         self.assertIn(mcp_url, self.client.get("/").text)

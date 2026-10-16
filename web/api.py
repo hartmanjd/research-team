@@ -124,7 +124,8 @@ def employer(employer_id: int):
         e["sector_name"] = q.SECTORS.get(e["sector"])
         return {"employer": e, "summary": q.summary(c, employer_id),
                 "same_tax_id": q.same_tax_id(c, employer_id), "cases": cases,
-                "case_years": q.case_years(c, employer_id), "profile": q.employer_profile(c, employer_id)}
+                "case_years": q.case_years(c, employer_id), "profile": q.employer_profile(c, employer_id),
+                "debarments": q.employer_debarments(c, employer_id)}
     finally:
         c.close()
 
@@ -158,6 +159,21 @@ def application(case_number: str):
                 "highlights": q.application_highlights(a), "sections": q.application_sections(a)}
     finally:
         c.close()
+
+
+@lru_cache(maxsize=1)
+def _debarments():
+    c = con()
+    try:
+        return q.debarments(c)
+    finally:
+        c.close()
+
+
+@app.get("/api/debarments")
+def debarments():
+    """DOL's published debarment lists, each entry with the visa employers in the data that match it."""
+    return _debarments()
 
 
 @app.get("/api/watchlist")
