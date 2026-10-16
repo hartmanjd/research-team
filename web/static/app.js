@@ -114,7 +114,7 @@ function searchPage(params) {
           <div class="name">${esc(h.employer_name)}${h.dba ? ` <span class="muted">· DBA ${esc(h.dba)}</span>` : ""}</div>
           <div class="where">${esc(titleCase(h.city))}, ${esc(h.state)} ${programBadge(h.program)}
             ${h.case_number ? `<span class="badge">Open application ${esc(h.case_number)}</span>` : ""}
-            ${h.willful_violator ? '<span class="badge danger">Willful violator</span>' : ""}</div>
+            ${h.willful_violator ? '<span class="badge danger">Self-reported willful violator</span>' : ""}</div>
         </div>
         <div class="stat"><b>${n(h.n_applications)}</b>applications</div>
         <div class="stat ${h.n_cases ? "hot" : ""}"><b>${n(h.n_cases)}</b>WHD cases</div>
@@ -160,8 +160,8 @@ async function homeOverview() {
         <a class="more" href="#/watchlist">Full Watchlist →</a>
       </div>
       <div class="card panel start">
-        <h3>Willful violators still filing</h3>
-        <div class="sub">${n(o.n_willful)} employers on DOL's willful violator list filed visa applications in FY2025. Most applications first.</div>
+        <h3>Self-reported willful violators</h3>
+        <div class="sub">${n(o.n_willful)} employers answered Yes to "willful violator" on most of their FY2025 applications. Most applications first.</div>
         <div class="start-rows">${o.willful.map((r) => `
           <a class="start-row" href="#/employer/${r.employer_id}" data-employer>
             <span class="who"><span class="nm">${esc(r.employer_name)}</span><span class="wh">${esc(titleCase(r.city))}, ${esc(r.state)} · ${r.n_cases ? `${n(r.n_cases)} linked case${r.n_cases === 1 ? "" : "s"}` : "no linked cases"}</span></span>
@@ -198,13 +198,24 @@ function miniMap(states) {
 }
 
 // ---------- employer ----------
+// The willful violator answer is the employer's own Yes/No on each application. It counts as a flag
+// only when most applications say Yes; a stray Yes is shown as a plain note with the count.
+function willfulBadge(e) {
+  if (!e.willful_yes) return "";
+  const of = `Yes on ${n(e.willful_yes)} of ${n(e.n_applications)} application${e.n_applications === 1 ? "" : "s"}`;
+  const tip = 'title="The employer\'s own answer to the willful violator question on its visa applications"';
+  return e.willful_violator
+    ? `<span class="badge danger" ${tip}><span class="dot"></span>Self-reported willful violator · ${of}</span>`
+    : `<span class="badge" ${tip}>Willful violator box: ${of}</span>`;
+}
+
 async function employerPage(id) {
   loading("Loading employer…");
   const d = await api("/employers/" + id);
   const e = d.employer, s = d.summary;
   const flags = [
     programBadge(e.program),
-    e.willful_violator ? '<span class="badge danger"><span class="dot"></span>Willful violator (DOL)</span>' : "",
+    willfulBadge(e),
     e.h1b_dependent ? '<span class="badge warn">H-1B dependent</span>' : "",
     s.cases ? `<span class="badge danger">${n(s.cases)} WHD case${s.cases === 1 ? "" : "s"}</span>` : '<span class="badge ok">No linked WHD cases</span>',
   ].join("");
@@ -560,7 +571,7 @@ function renderWatchlistTable(go) {
       <thead><tr>${WL_COLUMNS.map(th).join("")}</tr></thead>
       <tbody>${shown.map((r) => `<tr data-id="${r.employer_id}">
         <td><a class="emp" href="#/employer/${r.employer_id}" data-employer title="${esc(r.employer_name)}">${esc(r.employer_name)}</a>
-          <div class="emp-sub">${programBadge(r.program)} ${esc(titleCase(r.city))}, ${esc(r.state)}${r.willful_violator ? ' · <span style="color:var(--danger)">willful violator</span>' : ""}</div></td>
+          <div class="emp-sub">${programBadge(r.program)} ${esc(titleCase(r.city))}, ${esc(r.state)}${r.willful_violator ? ' · <span style="color:var(--danger)">self-reported willful violator</span>' : ""}</div></td>
         <td class="num"><span class="bar"><i style="width:${Math.max(2, 100 * r.back_wages / maxBw)}%"></i><span>${money(r.back_wages)}</span></span></td>
         <td class="num">${n(r.n_cases)}</td>
         <td class="num">${r.visa_violations ? `<b>${n(r.visa_violations)}</b>` : '<span class="muted">0</span>'}</td>

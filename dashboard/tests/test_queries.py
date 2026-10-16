@@ -203,16 +203,42 @@ class QueryTests(unittest.TestCase):
         self.assertEqual([r["sector"] for r in o["sectors"]], ["11"])
         self.assertEqual(queries.overview(self.con)["sectors"], [])  # fewer than 100 employers
         # A willful violator is listed with its applications and linked cases.
-        path = os.path.join(self.d, "willful.db")
-        shutil.copy(os.path.join(self.d, "research.db"), path)
-        with sqlite3.connect(path) as w:
-            w.execute("UPDATE employers SET willful_violator = 1 WHERE employer_id = ?", (self.acme_tx()["employer_id"],))
-        con = queries.connect(path)
+        con = self.willful_db(["I-1", "I-2"])
         o = queries.overview(con)
         con.close()
         self.assertEqual(o["n_willful"], 1)
-        self.assertEqual([(r["employer_name"], r["n_applications"], r["n_cases"]) for r in o["willful"]],
-                         [("Acme Software LLC", 2, 2)])
+        self.assertEqual([(r["employer_name"], r["n_applications"], r["willful_yes"], r["n_cases"]) for r in o["willful"]],
+                         [("Acme Software LLC", 2, 2, 2)])
+
+    def willful_db(self, yes_cases):
+        """A copy of the test database where the applications `yes_cases` answer Yes to the willful
+        violator question, with the employer flag set the way build_filers sets it (any Yes)."""
+        path = os.path.join(self.d, f"willful_{len(yes_cases)}.db")
+        shutil.copy(os.path.join(self.d, "research.db"), path)
+        with sqlite3.connect(path) as w:
+            for case in yes_cases:
+                w.execute("UPDATE applications SET willful_violator = 'Yes' WHERE case_number = ?", (case,))
+            w.execute("""UPDATE employers SET willful_violator = 1 WHERE employer_id IN
+                         (SELECT employer_id FROM applications WHERE willful_violator = 'Yes')""")
+        return queries.connect(path)
+
+    def test_one_willful_answer_out_of_many_is_not_a_flag(self):
+        # Acme TX (H-1B) filed two applications; a Yes on one of them is shown as a count only.
+        con = self.willful_db(["I-1"])
+        emp_id = self.acme_tx()["employer_id"]
+        e = queries.employer(con, emp_id)
+        self.assertEqual((e["willful_yes"], e["n_applications"], e["willful_violator"]), (1, 2, 0))
+        hit = next(h for h in queries.search_employers(con, "acme software") if h["employer_id"] == emp_id)
+        self.assertEqual((hit["willful_yes"], hit["willful_violator"]), (1, 0))
+        self.assertEqual({r["willful_violator"] for r in queries.watchlist(con)}, {0})
+        o = queries.overview(con)
+        self.assertEqual((o["willful"], o["n_willful"]), ([], 0))
+        con.close()
+        # Yes on both applications makes it a self-reported willful violator everywhere.
+        con = self.willful_db(["I-1", "I-2"])
+        self.assertEqual(queries.employer(con, emp_id)["willful_violator"], 1)
+        self.assertEqual([r["employer_id"] for r in queries.watchlist(con) if r["willful_violator"]], [emp_id])
+        con.close()
 
     def test_database_is_opened_read_only(self):
         with self.assertRaises(sqlite3.OperationalError):

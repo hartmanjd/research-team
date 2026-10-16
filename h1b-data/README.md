@@ -40,7 +40,7 @@ A checksum is a fingerprint of the file: change one character and it changes. `p
 | Table | One row per | Key columns |
 | --- | --- | --- |
 | sources | input file | file, sha256, rows, urls, created_utc, manifest |
-| employers | employer per program (H-1B or H-2B) | employer_id, program, name_clean, state, zip5, address, phone, fein, n_applications, n_certified, h1b_dependent, willful_violator |
+| employers | employer per program (H-1B or H-2B) | employer_id, program, name_clean, state, zip5, address, phone, fein, n_applications, n_certified, h1b_dependent, willful_violator (1 when any application answers Yes to the willful violator question; the dashboard flags an employer only when most do) |
 | applications | visa application | case_number, employer_id, case_status, visa_class, then every disclosure column (179 in all; H-2B-only columns are empty on H-1B rows and the other way round) |
 | violation_cases | WHD enforcement case | case_id, names, address, dates, back wages, fines, violation counts by law, load_dt |
 | matches | WHD case linked to an employer | case_id, employer_id, method, est_false_match_rate, whd_name_field, employer_name_field |

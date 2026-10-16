@@ -18,7 +18,7 @@ Then open http://localhost:8000 in a browser. `--reload` restarts the server whe
 
 | Address | Page |
 | --- | --- |
-| `#/` | Employer lookup: search by name, trade name (DBA) or tax ID, or open an application by its DOL case number. Before a search it shows a small map of cases per 100 visa employers, headline totals and three starting points: the employers with the most back wages, willful violators that still filed, and the industries with the highest share of employers with a case |
+| `#/` | Employer lookup: search by name, trade name (DBA) or tax ID, or open an application by its DOL case number. Before a search it shows a small map of cases per 100 visa employers, headline totals and three starting points: the employers with the most back wages, employers that answered Yes to the willful violator question on most of their applications, and the industries with the highest share of employers with a case |
 | `#/employer/<id>` | One employer: DOL flags, totals, linked cases by year, same tax ID elsewhere, its jobs, worksites, offered against prevailing wages and representatives, each linked WHD case with its match rule and source, and its visa applications |
 | `#/application/<case number>` | One application: headline job, workers, wages and dates, then every field of its DOL disclosure record by section |
 | `#/watchlist` | Every employer with linked WHD cases, sortable, with filters (program, state, industry, year, visa violations, applications) kept in the address |
