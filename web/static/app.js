@@ -90,9 +90,6 @@ function searchPage(params) {
       <div class="searchbox">${icon.search}
         <input id="q" type="search" placeholder="Company name, trade name, tax ID or DOL case number" autocomplete="off" value="${esc(q)}">
       </div>
-      <div class="hint-list" id="hints">
-        ${["Infosys", "Cafua Management", "Cognizant", "06-1506026", "I-200-25273-349981"].map((h) => `<button class="hint">${h}</button>`).join("")}
-      </div>
     </section>
     <div class="results" id="results"></div>`;
   const input = document.getElementById("q");
@@ -116,9 +113,6 @@ function searchPage(params) {
       </a>`).join("") : `<div class="card empty">No employers match “${esc(text)}”.</div>`;
   };
   input.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => run(input.value), 180); });
-  document.getElementById("hints").addEventListener("click", (e) => {
-    if (e.target.matches(".hint")) { input.value = e.target.textContent; run(input.value); }
-  });
   input.focus();
   if (q) run(q);
 }
