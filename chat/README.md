@@ -39,6 +39,32 @@ does not hold (company revenue, future investigations, older years); those pass 
 so. The summary gives the pass count and the total and per-question cost. `--only visa` runs one kind,
 `--model claude-sonnet-5-5` compares another model.
 
+## Use it from Claude Desktop (MCP)
+
+The website also serves the same eight lookups as a read-only MCP server at `/mcp`. MCP (Model Context
+Protocol) is a standard way for an AI app to call outside tools. Once connected, Claude can look things up in
+this database while you chat with it in Claude Desktop or on claude.ai, and no API key is needed. Your own
+Claude plan pays for the conversation, and the site does no writing of any kind.
+
+1. Open Claude Desktop (or claude.ai in a browser) and sign in.
+2. Open **Settings**, then **Connectors**. On some versions this is under **Customize > Connectors**.
+3. Click **Add custom connector**.
+4. Give it a name, such as `Visa Employer Watch`, and paste this URL:
+
+        https://visa-employer-watch.onrender.com/mcp
+
+5. Click **Add**. There is no sign-in step, because the server is public and read-only.
+6. Start a new chat and ask, for example, "Using Visa Employer Watch, which H-2B employers in Texas have
+   the most back wages?" Claude asks permission the first time it uses each lookup.
+
+Custom connectors work on every Claude plan. A free account can add one. The free Render plan sleeps after
+about 15 idle minutes, so the first lookup after a quiet spell can take up to a minute while the site wakes.
+
+To try a local copy instead, start the site (see `web/README.md`) and point an MCP client at
+`http://localhost:8000/mcp`. Claude Desktop's custom connectors need a public https address, so a local
+copy is easiest to test with a command-line client, such as the MCP Inspector
+(`npx @modelcontextprotocol/inspector`, which needs Node.js).
+
 ## Files
 
 | File | What it is |
@@ -47,6 +73,8 @@ so. The summary gives the pass count and the total and per-question cost. `--onl
 | engine.py | The instructions, the question-and-lookup loop, citation links and checks, and cost |
 | __main__.py | `python3 -m chat`: ask one question from the terminal |
 | eval.py | The question set built from the database, the grader and the eval runner |
+| mcp_server.py | The same lookups as a read-only MCP server, mounted at `/mcp` by `web/api.py` |
 | tests/test_chat.py | Tests with a scripted stand-in for the model, so they make no API calls |
+| tests/test_mcp.py | Tests of the MCP server through the website's app |
 
 Run the tests from the repo root with `python3 -m unittest discover chat/tests`.

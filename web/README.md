@@ -63,6 +63,7 @@ the Watchlist filtered to it.
 | `GET /api/sectors?program=&visa_only=` | The same numbers per NAICS sector |
 | `GET /api/overview` | Headline totals and the lookup page's starting points (computed once per server start) |
 | `GET /api/meta` | States, NAICS sector names and the source files behind the database |
+| `POST /mcp` | The chat's eight lookups as a read-only MCP server (see `chat/README.md` for connecting Claude Desktop) |
 
 FastAPI also serves interactive API docs at http://localhost:8000/docs.
 

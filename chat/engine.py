@@ -6,7 +6,7 @@ link to the website and flags any marker whose ID never came back from a tool.
 """
 import json, os, re
 
-from .tools import TOOLS, run_tool
+from .tools import DATA_NOTES, TOOLS, run_tool
 
 MODEL = os.environ.get("CHAT_MODEL", "claude-haiku-5-5")
 SITE_URL = os.environ.get("SITE_URL", "https://visa-employer-watch.onrender.com").rstrip("/")
@@ -27,13 +27,7 @@ Cite every employer, WHD case and application you mention, right after the fact,
 Only cite IDs that a tool returned in this conversation.
 
 What the data means:
-- Applications are FY2025 DOL disclosure records (LCA for H-1B, H-2B certifications), one row per case number, latest status.
-- An employer row is one company name at one address in one program; one company can have several rows. Rows sharing a tax ID are listed under same_tax_id_elsewhere.
-- WHD cases cover every law WHD enforces (minimum wage, overtime, child labor, H-1B, H-2B, H-2A and others) and every year in the data, not only visa violations. Say "visa-program violations" only for h1b_violations on an H-1B employer or h2b_violations on an H-2B employer.
-- WHD records have no tax ID, so cases are linked to employers by cleaned name plus ZIP code or state. Some links are wrong (about 3 to 4 percent in a tax-ID test). When a single case drives your answer, mention that it is a name match.
-- A case with 0 violations and $0 back wages means WHD investigated and recorded no violations.
-- willful_violator is the employer's own Yes/No answer on its applications, not a DOL finding. It counts only when most applications say Yes; willful_yes gives the count.
-- Money is in U.S. dollars. back_wages is the back wages WHD found owed; penalties are civil money penalties assessed.
+""" + DATA_NOTES + """
 
 Write for a non-specialist: lead with the answer, keep it short, use a small table for lists of more than three rows, and give numbers as the tools return them (round only for readability, and say so)."""
 

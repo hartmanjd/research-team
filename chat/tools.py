@@ -22,6 +22,15 @@ def _schema(props, required=()):
     return {"type": "object", "properties": props, "required": list(required), "additionalProperties": False}
 
 
+# What the fields mean, for any model that reads the tool results (the chat and the MCP server).
+DATA_NOTES = """- Applications are FY2025 DOL disclosure records (LCA for H-1B, H-2B certifications), one row per case number, latest status.
+- An employer row is one company name at one address in one program; one company can have several rows. Rows sharing a tax ID are listed under same_tax_id_elsewhere.
+- WHD cases cover every law WHD enforces (minimum wage, overtime, child labor, H-1B, H-2B, H-2A and others) and every year in the data, not only visa violations. Say "visa-program violations" only for h1b_violations on an H-1B employer or h2b_violations on an H-2B employer.
+- WHD records have no tax ID, so cases are linked to employers by cleaned name plus ZIP code or state. Some links are wrong (about 3 to 4 percent in a tax-ID test). When a single case drives your answer, mention that it is a name match.
+- A case with 0 violations and $0 back wages means WHD investigated and recorded no violations.
+- willful_violator is the employer's own Yes/No answer on its applications, not a DOL finding. It counts only when most applications say Yes; willful_yes gives the count.
+- Money is in U.S. dollars. back_wages is the back wages WHD found owed; penalties are civil money penalties assessed."""
+
 _PROGRAM = {"type": "string", "enum": PROGRAMS, "description": "Visa program: H-1B or H-2B"}
 _VISA_ONLY = {"type": "boolean", "description": "Count only WHD cases that found violations of the "
               "employer's own visa program (H-1B or H-2B)"}

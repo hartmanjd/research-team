@@ -14,6 +14,8 @@ from fastapi.staticfiles import StaticFiles
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "dashboard"))
 import queries as q  # noqa: E402
+sys.path.insert(0, os.path.join(HERE, ".."))
+from chat.mcp_server import router as mcp_router  # noqa: E402
 
 PAGE_SIZE = 100
 
@@ -25,6 +27,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title="H-1B / H-2B employer research API", lifespan=lifespan)
+app.include_router(mcp_router)  # the chat's lookups as a read-only MCP server at /mcp
 
 
 def con():
