@@ -64,8 +64,25 @@ class ApiTests(unittest.TestCase):
         self.assertEqual([r["program"] for r in d["rows"]], ["H-1B"])
         self.assertEqual(self.client.get("/api/watchlist", params={"program": "H-3"}).status_code, 422)
 
+    def test_state_and_sector_stats(self):
+        states = self.client.get("/api/states").json()
+        self.assertEqual([r["state"] for r in states], ["CA", "NY", "TX"])
+        self.assertEqual(states[2]["cases"], 2)
+        h2b = self.client.get("/api/states", params={"program": "H-2B", "visa_only": "true"}).json()
+        self.assertEqual([(r["state"], r["cases"]) for r in h2b], [("TX", 0)])
+        sectors = self.client.get("/api/sectors").json()
+        self.assertEqual([(r["sector"], r["employers"]) for r in sectors], [("11", 4)])
+        self.assertEqual(self.client.get("/api/sectors", params={"program": "H-3"}).status_code, 422)
+        d = self.client.get("/api/watchlist", params={"sector": "11"}).json()
+        self.assertEqual(len(d["rows"]), 2)
+        self.assertEqual(self.client.get("/api/watchlist", params={"sector": "99"}).status_code, 422)
+        e = self.client.get(f"/api/employers/{self.acme_tx()['employer_id']}").json()
+        self.assertEqual((e["employer"]["sector"], [y["year"] for y in e["case_years"]]), ("11", [2019, 2023]))
+
     def test_meta_and_site(self):
-        self.assertIn("TX", self.client.get("/api/meta").json()["states"])
+        meta = self.client.get("/api/meta").json()
+        self.assertIn("TX", meta["states"])
+        self.assertEqual(meta["sectors"]["54"], "Professional, scientific and technical services")
         page = self.client.get("/")
         self.assertEqual(page.status_code, 200)
         self.assertIn("Visa Employer Watch", page.text)

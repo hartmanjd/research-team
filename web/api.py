@@ -6,6 +6,7 @@ downloads it on first start if it is missing (see dashboard/queries.py).
 """
 import os, sys
 from contextlib import asynccontextmanager
+from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
@@ -31,11 +32,44 @@ def con():
     return q.connect()
 
 
+def check_program(program):
+    if program not in (None, "", "H-1B", "H-2B"):
+        raise HTTPException(422, "program must be H-1B or H-2B")
+
+
+@lru_cache(maxsize=16)
+def _group_stats(kind, program, visa_only):
+    """State and sector totals scan every match, so each filter combination is computed once.
+
+    Safe to cache because the database is opened read-only and does not change while the app runs.
+    """
+    c = con()
+    try:
+        fn = q.state_stats if kind == "states" else q.sector_stats
+        return fn(c, program=program, visa_violations_only=visa_only)
+    finally:
+        c.close()
+
+
+@app.get("/api/states")
+def states(program: str | None = None, visa_only: bool = False):
+    """Per-state visa employers and linked WHD case totals, for the map."""
+    check_program(program)
+    return _group_stats("states", program or None, visa_only)
+
+
+@app.get("/api/sectors")
+def sectors(program: str | None = None, visa_only: bool = False):
+    """Per-NAICS-sector visa employers and linked WHD case totals, for the Industries page."""
+    check_program(program)
+    return _group_stats("sectors", program or None, visa_only)
+
+
 @app.get("/api/meta")
 def meta():
     c = con()
     try:
-        return {"states": q.states(c), "sources": q.sources(c)}
+        return {"states": q.states(c), "sectors": q.SECTORS, "sources": q.sources(c)}
     finally:
         c.close()
 
@@ -60,8 +94,11 @@ def employer(employer_id: int):
         cases = q.cases(c, employer_id)
         for v in cases:
             v["match_label"] = q.match_label(v["method"], v["est_false_match_rate"])
+        e["sector"] = q.sector_of(e["naics"])
+        e["sector_name"] = q.SECTORS.get(e["sector"])
         return {"employer": e, "summary": q.summary(c, employer_id),
-                "same_tax_id": q.same_tax_id(c, employer_id), "cases": cases}
+                "same_tax_id": q.same_tax_id(c, employer_id), "cases": cases,
+                "case_years": q.case_years(c, employer_id)}
     finally:
         c.close()
 
@@ -83,11 +120,12 @@ def applications(employer_id: int, page: int = Query(1, ge=1)):
 @app.get("/api/watchlist")
 def watchlist(program: str | None = None, state: str | None = None,
               since: int | None = Query(None, ge=1900, le=2100), visa_only: bool = False,
-              min_apps: int = Query(1, ge=1)):
-    if program not in (None, "", "H-1B", "H-2B"):
-        raise HTTPException(422, "program must be H-1B or H-2B")
+              min_apps: int = Query(1, ge=1), sector: str | None = None):
+    check_program(program)
+    if sector and sector not in q.SECTORS:
+        raise HTTPException(422, "Unknown sector")
     filters = dict(program=program or None, state=state or None, since_year=since,
-                   visa_violations_only=visa_only, min_applications=min_apps)
+                   visa_violations_only=visa_only, min_applications=min_apps, sector=sector or None)
     c = con()
     try:
         return {"rows": q.watchlist(c, **filters), "totals": q.watchlist_totals(c, **filters)}
