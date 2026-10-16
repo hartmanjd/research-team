@@ -2,7 +2,7 @@
 
 Run from the repo root:  python3 -m unittest discover dashboard/tests
 """
-import gzip, hashlib, io, os, pathlib, sqlite3, sys, tempfile, unittest
+import gzip, hashlib, io, os, pathlib, shutil, sqlite3, sys, tempfile, unittest
 from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -192,6 +192,27 @@ class QueryTests(unittest.TestCase):
         self.assertEqual([(y["year"], y["cases"], y["back_wages"])
                           for y in queries.case_years(self.con, self.acme_tx()["employer_id"])],
                          [(2019, 1, 1000.0), (2023, 1, 500.0)])
+
+    def test_overview(self):
+        o = queries.overview(self.con, min_sector_employers=1)
+        t = o["totals"]
+        self.assertEqual((t["employers"], t["applications"], t["employers_with_cases"]), (4, 5, 2))
+        self.assertEqual((t["cases"], t["back_wages"], t["penalties"]), (2, 1500.0, 250.0))
+        self.assertEqual([r["program"] for r in o["top_back_wages"]], ["H-1B", "H-2B"])
+        self.assertEqual((o["willful"], o["n_willful"]), ([], 0))
+        self.assertEqual([r["sector"] for r in o["sectors"]], ["11"])
+        self.assertEqual(queries.overview(self.con)["sectors"], [])  # fewer than 100 employers
+        # A willful violator is listed with its applications and linked cases.
+        path = os.path.join(self.d, "willful.db")
+        shutil.copy(os.path.join(self.d, "research.db"), path)
+        with sqlite3.connect(path) as w:
+            w.execute("UPDATE employers SET willful_violator = 1 WHERE employer_id = ?", (self.acme_tx()["employer_id"],))
+        con = queries.connect(path)
+        o = queries.overview(con)
+        con.close()
+        self.assertEqual(o["n_willful"], 1)
+        self.assertEqual([(r["employer_name"], r["n_applications"], r["n_cases"]) for r in o["willful"]],
+                         [("Acme Software LLC", 2, 2)])
 
     def test_database_is_opened_read_only(self):
         with self.assertRaises(sqlite3.OperationalError):

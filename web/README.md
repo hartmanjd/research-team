@@ -18,7 +18,7 @@ Then open http://localhost:8000 in a browser. `--reload` restarts the server whe
 
 | Address | Page |
 | --- | --- |
-| `#/` | Employer lookup: search by name, trade name (DBA) or tax ID, or open an application by its DOL case number |
+| `#/` | Employer lookup: search by name, trade name (DBA) or tax ID, or open an application by its DOL case number. Before a search it shows a small map of cases per 100 visa employers, headline totals and three starting points: the employers with the most back wages, willful violators that still filed, and the industries with the highest share of employers with a case |
 | `#/employer/<id>` | One employer: DOL flags, totals, linked cases by year, same tax ID elsewhere, its jobs, worksites, offered against prevailing wages and representatives, each linked WHD case with its match rule and source, and its visa applications |
 | `#/application/<case number>` | One application: headline job, workers, wages and dates, then every field of its DOL disclosure record by section |
 | `#/watchlist` | Every employer with linked WHD cases, sortable, with filters (program, state, industry, year, visa violations, applications) kept in the address |
@@ -39,6 +39,7 @@ the Watchlist filtered to it.
 | `GET /api/watchlist?program=&state=&sector=&since=&visa_only=&min_apps=` | Watchlist rows plus totals that count each case once |
 | `GET /api/states?program=&visa_only=` | Per state: visa employers, applications, employers with a case, cases, back wages, penalties, visa violations and rates |
 | `GET /api/sectors?program=&visa_only=` | The same numbers per NAICS sector |
+| `GET /api/overview` | Headline totals and the lookup page's starting points (computed once per server start) |
 | `GET /api/meta` | States, NAICS sector names and the source files behind the database |
 
 FastAPI also serves interactive API docs at http://localhost:8000/docs.

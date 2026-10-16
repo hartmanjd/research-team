@@ -59,6 +59,12 @@ class ApiTests(unittest.TestCase):
         self.assertEqual((rows[0]["job_title"], rows[0]["worksite_city"], rows[0]["lawfirm"]),
                          ("Developer", "Austin", "Law Firm LLP"))
 
+    def test_overview(self):
+        o = self.client.get("/api/overview").json()
+        self.assertEqual((o["totals"]["employers"], o["totals"]["cases"]), (4, 2))
+        self.assertEqual(o["top_back_wages"][0]["employer_name"], "Acme Software LLC")
+        self.assertEqual((o["willful"], o["sectors"]), ([], []))
+
     def test_applications_are_paged(self):
         eid = self.acme_tx()["employer_id"]
         with mock.patch.object(api, "PAGE_SIZE", 1):
