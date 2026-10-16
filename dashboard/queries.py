@@ -466,6 +466,30 @@ def watchlist_totals(con, **filters):
             WHERE {where})""", *args)[0]
 
 
+def overview(con, top=5, min_sector_employers=100):
+    """Headline numbers and starting points for the lookup page.
+
+    `top_back_wages`: employers with the most back wages in linked WHD cases. `willful`: employers DOL
+    lists as willful violators that filed visa applications this year, most applications first.
+    `sectors`: industries with at least `min_sector_employers` visa employers, by share with a case.
+    """
+    totals = rows(con, """
+        SELECT (SELECT COUNT(*) FROM employers) AS employers,
+               (SELECT COUNT(*) FROM applications) AS applications,
+               (SELECT COUNT(DISTINCT employer_id) FROM matches) AS employers_with_cases""")[0]
+    totals.update(watchlist_totals(con))
+    willful = rows(con, """
+        SELECT e.employer_id, e.employer_name, e.city, e.state, e.program, e.n_applications,
+               (SELECT COUNT(*) FROM matches m WHERE m.employer_id = e.employer_id) AS n_cases
+        FROM employers e WHERE e.willful_violator = 1
+        ORDER BY e.n_applications DESC, e.employer_id LIMIT ?""", top)
+    n_willful = rows(con, "SELECT COUNT(*) AS n FROM employers WHERE willful_violator = 1")[0]["n"]
+    sectors = [r for r in sector_stats(con) if r["employers"] >= min_sector_employers]
+    sectors.sort(key=lambda r: -r["share_with_cases"])
+    return {"totals": totals, "top_back_wages": watchlist(con)[:top], "willful": willful,
+            "n_willful": n_willful, "sectors": sectors[:top]}
+
+
 # NAICS sectors (first two digits of the code). Three sectors span several two-digit prefixes.
 SECTORS = {
     "11": "Agriculture, forestry, fishing and hunting", "21": "Mining, oil and gas",

@@ -81,7 +81,8 @@ let searchTimer;
 function searchPage(params) {
   const q = params.get("q") || "";
   app.innerHTML = `
-    <section class="hero">
+    <section class="hero home">
+      <div class="hero-text">
       <div class="eyebrow">H-1B and H-2B employers · Wage and Hour enforcement</div>
       <h1 class="page-title">Look up an employer</h1>
       <p class="lede">Search 80,950 employers that filed H-1B or H-2B applications in FY2025 by name, trade name or tax ID,
@@ -90,12 +91,19 @@ function searchPage(params) {
       <div class="searchbox">${icon.search}
         <input id="q" type="search" placeholder="Company name, trade name, tax ID or DOL case number" autocomplete="off" value="${esc(q)}">
       </div>
+      </div>
+      <a class="card mini-map" id="mini-map" href="#/map" aria-label="Open the map"></a>
     </section>
+    <div id="overview"></div>
     <div class="results" id="results"></div>`;
   const input = document.getElementById("q");
+  const overview = document.getElementById("overview");
+  overview.hidden = !!q.trim();
+  homeOverview();
   const run = async (text) => {
     history.replaceState(null, "", text ? "#/?q=" + encodeURIComponent(text) : "#/");
     const box = document.getElementById("results");
+    overview.hidden = !!text.trim();
     if (!text.trim()) { box.innerHTML = ""; return; }
     const hits = await api("/search", { q: text });
     if (input.value !== text) return; // a newer search is on its way
@@ -115,6 +123,78 @@ function searchPage(params) {
   input.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => run(input.value), 180); });
   input.focus();
   if (q) run(q);
+}
+
+// Starting points under the search box, and a small map beside the headline.
+// Both fill in after the page shows, so typing is never held up.
+async function homeOverview() {
+  const [o, states] = await Promise.all([api("/overview"), api("/states")]);
+  const box = document.getElementById("overview"), mapBox = document.getElementById("mini-map");
+  if (!box || !mapBox) return; // the user has moved on
+  mapBox.innerHTML = miniMap(states);
+  bindTips(mapBox, (st) => {
+    const d = states.find((r) => r.state === st);
+    return `<b>${esc(STATE_NAMES[st] || st)}</b>` + (d ? tipRows([["Visa employers", n(d.employers)], ["Linked cases", n(d.cases)],
+      ["Cases per 100", d.cases_per_100.toFixed(1)], ["Back wages", compactMoney(d.back_wages)]]) : '<div class="tip-hint">No visa employers in the data.</div>');
+  });
+  const t = o.totals;
+  const maxWage = Math.max(...o.top_back_wages.map((r) => r.back_wages), 1);
+  const maxShare = Math.max(...o.sectors.map((r) => r.share_with_cases), 0.01);
+  box.innerHTML = `
+    <div class="tiles home-tiles">
+      <div class="card tile"><div class="label">Visa employers</div><div class="value">${n(t.employers)}</div><div class="sub">filed in FY2025</div></div>
+      <div class="card tile"><div class="label">Applications</div><div class="value">${n(t.applications)}</div><div class="sub">H-1B and H-2B, FY2025</div></div>
+      <div class="card tile"><div class="label">Employers with WHD cases</div><div class="value">${n(t.employers_with_cases)}</div><div class="sub">${pct(t.employers_with_cases / t.employers)} of employers, ${n(t.cases)} cases</div></div>
+      <div class="card tile"><div class="label">Back wages found</div><div class="value accent-num">${compactMoney(t.back_wages)}</div><div class="sub">plus ${compactMoney(t.penalties)} in penalties</div></div>
+    </div>
+    <div class="eyebrow start-h">Where to start</div>
+    <div class="grid-3">
+      <div class="card panel start">
+        <h3>Most back wages found</h3>
+        <div class="sub">Employers whose linked WHD cases found the most back wages owed to workers.</div>
+        <div class="start-rows">${o.top_back_wages.map((r) => `
+          <a class="start-row" href="#/employer/${r.employer_id}" data-employer>
+            <span class="who"><span class="nm">${esc(r.employer_name)}</span><span class="wh">${esc(titleCase(r.city))}, ${esc(r.state)} · ${n(r.n_cases)} case${r.n_cases === 1 ? "" : "s"}</span></span>
+            <span class="v">${compactMoney(r.back_wages)}</span>
+            <span class="track"><span class="fill" style="width:${Math.max(2, 100 * r.back_wages / maxWage)}%"></span></span></a>`).join("")}</div>
+        <a class="more" href="#/watchlist">Full Watchlist →</a>
+      </div>
+      <div class="card panel start">
+        <h3>Willful violators still filing</h3>
+        <div class="sub">${n(o.n_willful)} employers on DOL's willful violator list filed visa applications in FY2025. Most applications first.</div>
+        <div class="start-rows">${o.willful.map((r) => `
+          <a class="start-row" href="#/employer/${r.employer_id}" data-employer>
+            <span class="who"><span class="nm">${esc(r.employer_name)}</span><span class="wh">${esc(titleCase(r.city))}, ${esc(r.state)} · ${r.n_cases ? `${n(r.n_cases)} linked case${r.n_cases === 1 ? "" : "s"}` : "no linked cases"}</span></span>
+            <span class="v">${n(r.n_applications)}<small>apps</small></span></a>`).join("")}</div>
+        <span class="more muted">Flag shown on each employer's page</span>
+      </div>
+      <div class="card panel start">
+        <h3>Industries with the most cases</h3>
+        <div class="sub">Share of each industry's visa employers with a linked WHD case (industries with 100+ employers).</div>
+        <div class="start-rows">${o.sectors.map((r) => `
+          <a class="start-row" href="#/watchlist?sector=${encodeURIComponent(r.sector)}">
+            <span class="who"><span class="nm">${esc(r.name)}</span><span class="wh">${n(r.employers_with_cases)} of ${n(r.employers)} employers</span></span>
+            <span class="v">${pct(r.share_with_cases)}</span>
+            <span class="track"><span class="fill" style="width:${Math.max(2, 100 * r.share_with_cases / maxShare)}%"></span></span></a>`).join("")}</div>
+        <a class="more" href="#/industries">All industries →</a>
+      </div>
+    </div>`;
+}
+
+function miniMap(states) {
+  const byState = Object.fromEntries(states.map((r) => [r.state, r]));
+  const rated = states.filter((r) => TILES[r.state] && r.employers >= MIN_EMPLOYERS);
+  const breaks = quantileBreaks(rated.map((r) => r.cases_per_100));
+  const S = 30, G = 3;
+  const tiles = Object.entries(TILES).map(([st, [c, r]]) => {
+    const d = byState[st], ok = d && d.employers >= MIN_EMPLOYERS;
+    const cls = ok ? classOf(d.cases_per_100, breaks) : 0;
+    return `<g class="st" data-tip="${st}"><rect x="${c * (S + G)}" y="${r * (S + G)}" width="${S}" height="${S}" style="fill:var(--seq-${cls})"/>
+      <text class="c${cls}" x="${c * (S + G) + S / 2}" y="${r * (S + G) + S / 2 + 4}" text-anchor="middle">${st}</text></g>`;
+  }).join("");
+  return `<div class="mini-head"><span>Cases per 100 visa employers</span><span class="go">Map →</span></div>
+    <svg class="tilemap mini" viewBox="0 0 ${12 * (S + G) - G} ${8 * (S + G) - G}" role="img" aria-label="Linked WHD cases per 100 visa employers by state">${tiles}</svg>
+    <div class="mini-legend"><span>fewer</span><span class="ramp">${[1, 2, 3, 4, 5, 6, 7].map((i) => `<i style="background:var(--seq-${i})"></i>`).join("")}</span><span>more</span></div>`;
 }
 
 // ---------- employer ----------
@@ -644,11 +724,10 @@ async function mapPage(params) {
     const d = byState[st];
     const ok = enough(d);
     const cls = ok ? classOf(d[metric], breaks) : 0;
-    const dark = cls >= 5;
     return `<a class="st ${ok ? "" : "na"}" href="${g.toWatchlist({ state: st })}" data-tip="${st}" aria-label="${esc(STATE_NAMES[st] || st)}">
       <rect x="${c * (S + G)}" y="${r * (S + G)}" width="${S}" height="${S}" style="fill:var(--seq-${cls})"/>
-      <text x="${c * (S + G) + S / 2}" y="${r * (S + G) + S / 2 - 2}" text-anchor="middle" style="fill:${dark ? "#fff" : "var(--ink)"}">${st}</text>
-      <text class="val" x="${c * (S + G) + S / 2}" y="${r * (S + G) + S / 2 + 13}" text-anchor="middle" style="fill:${dark ? "rgba(255,255,255,.85)" : "var(--ink-2)"}">${ok ? M.fmt(d[metric]) : d ? "few" : "–"}</text>
+      <text class="c${cls}" x="${c * (S + G) + S / 2}" y="${r * (S + G) + S / 2 - 2}" text-anchor="middle">${st}</text>
+      <text class="val c${cls}" x="${c * (S + G) + S / 2}" y="${r * (S + G) + S / 2 + 13}" text-anchor="middle">${ok ? M.fmt(d[metric]) : d ? "few" : "–"}</text>
     </a>`;
   }).join("");
   const W = 12 * (S + G), H = 8 * (S + G);

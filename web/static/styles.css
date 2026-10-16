@@ -349,3 +349,47 @@ details.sources > summary { cursor: pointer; color: var(--ink-2); font-size: 14p
 .tile .value.small-value { font-size: 18px; line-height: 1.3; }
 @media (max-width: 900px) { .form-sections { columns: 1; } }
 @media (max-width: 720px) { .bands { gap: 4px; } .band-l { font-size: 11px; } .band-bar { height: 90px; } }
+
+/* ---------- lookup page overview ---------- */
+.hero.home { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 32px; align-items: start; }
+.hero.home .lede { max-width: 640px; }
+.mini-map { display: block; padding: 14px 16px 12px; color: var(--ink); margin-top: 6px; }
+.mini-map:hover { text-decoration: none; border-color: var(--accent); }
+.mini-map:empty { min-height: 250px; }
+.mini-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-3); font-weight: 500; margin-bottom: 8px; }
+.mini-head .go { color: var(--accent); }
+.tilemap.mini .st rect { stroke-width: 1.5; rx: 4; }
+.tilemap.mini .st text { font: 600 10px var(--sans); }
+.tilemap.mini .st:hover rect { stroke: var(--ink); }
+.mini-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-3); margin-top: 8px; }
+.mini-legend .ramp { display: flex; gap: 2px; }
+.mini-legend i { width: 16px; height: 8px; border-radius: 2px; display: block; }
+.home-tiles { margin-top: 28px; }
+.tile .value.accent-num { color: var(--danger); }
+.start-h { margin: 28px 0 0; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 10px; }
+.start { display: flex; flex-direction: column; }
+.start .sub { min-height: 3em; }
+.start-rows { display: grid; gap: 2px; margin: 0 -8px; }
+.start-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; align-items: center; padding: 7px 8px; border-radius: 8px; color: var(--ink); }
+.start-row:hover { background: var(--accent-soft); text-decoration: none; }
+.start-row .who { min-width: 0; }
+.start-row .nm { display: block; font-size: 13px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.start-row .wh { display: block; font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.start-row .v { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.start-row .v small { font-weight: 400; color: var(--ink-3); margin-left: 3px; font-size: 11px; }
+.start-row .track { grid-column: 1 / -1; height: 4px; background: var(--line-2); border-radius: 2px; margin-top: 5px; overflow: hidden; }
+.start-row .fill { display: block; height: 100%; background: var(--series-1); border-radius: 2px; }
+.start .more { margin-top: auto; padding-top: 12px; font-size: 13px; font-weight: 500; }
+.start span.more { font-weight: 400; }
+@media (max-width: 1000px) { .grid-3 { grid-template-columns: 1fr; } .start .sub { min-height: 0; } }
+@media (max-width: 900px) { .hero.home { grid-template-columns: 1fr; gap: 16px; } .mini-map { max-width: 420px; } }
+/* Tile labels: dark ink on light shades, light ink on dark shades (the ramp runs the other way in dark mode). */
+.tilemap .st text { fill: var(--ink); }
+.tilemap .st text.val { fill: var(--ink-2); }
+.tilemap .st text.c5, .tilemap .st text.c6, .tilemap .st text.c7 { fill: #fff; }
+.tilemap .st text.val.c5, .tilemap .st text.val.c6, .tilemap .st text.val.c7 { fill: rgba(255, 255, 255, .85); }
+@media (prefers-color-scheme: dark) {
+  .tilemap .st text.c5, .tilemap .st text.c6, .tilemap .st text.c7,
+  .tilemap .st text.val.c5, .tilemap .st text.val.c6, .tilemap .st text.val.c7 { fill: #0e1117; }
+}

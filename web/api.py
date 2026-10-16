@@ -65,6 +65,21 @@ def sectors(program: str | None = None, visa_only: bool = False):
     return _group_stats("sectors", program or None, visa_only)
 
 
+@lru_cache(maxsize=1)
+def _overview():
+    c = con()
+    try:
+        return q.overview(c)
+    finally:
+        c.close()
+
+
+@app.get("/api/overview")
+def overview():
+    """Headline numbers and starting points for the lookup page (computed once per server start)."""
+    return _overview()
+
+
 @app.get("/api/meta")
 def meta():
     c = con()
