@@ -3,17 +3,17 @@
 Plain functions over a sqlite3 connection, returning lists of dicts, so they can
 be tested without Streamlit. See h1b-data/README.md for the tables.
 """
-import gzip, hashlib, os, shutil, sqlite3, sys, urllib.request
+import gzip, hashlib, os, re, shutil, sqlite3, sys, urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "h1b-data", "scripts"))
-from employer_keys import clean_name  # noqa: E402
+from employer_keys import clean_name, fein as clean_fein  # noqa: E402
 
 DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "h1b-data", "research.db")
 
 # A gzipped copy of research.db published as a GitHub release asset, for hosts (like Streamlit
 # Cloud) that only have the git checkout. The checksum is of the .gz file at that URL.
-DB_URL = "https://github.com/hartmanjd/research-team/releases/download/data-2026-10-15/research.db.gz"
-DB_SHA256 = "02e7ff6c96e2ac4cd8194bb8f9db7d581dd096e59c42a74f174126e50b931c67"
+DB_URL = "https://github.com/hartmanjd/research-team/releases/download/data-2026-10-16/research.db.gz"
+DB_SHA256 = "1d71bef037e6184b9ed319c2381ee61869084169a45f397d1bdb391ef876a26c"
 
 
 def connect(path=None):
@@ -27,14 +27,28 @@ def connect(path=None):
     return con
 
 
+def _older_layout(path):
+    """True for a database whose applications table predates the full disclosure columns."""
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            cols = {r[1] for r in con.execute("PRAGMA table_info(applications)")}
+        finally:
+            con.close()
+    except sqlite3.DatabaseError:
+        return False
+    return bool(cols) and "job_title" not in cols
+
+
 def download_db(path=None, url=None, sha256=None):
-    """Download the gzipped database to `path` if it is not there yet, and return the path.
+    """Download the gzipped database to `path` if it is not there yet (or is an older layout
+    without the full application columns), and return the path.
 
     The download is checked against its SHA-256 before it is unpacked, and written under a
     temporary name first, so a failed or wrong download never leaves a database behind.
     """
     path = os.path.abspath(path or os.environ.get("RESEARCH_DB") or DEFAULT_DB)
-    if os.path.exists(path):
+    if os.path.exists(path) and not _older_layout(path):
         return path
     url = url or os.environ.get("RESEARCH_DB_URL") or DB_URL
     sha256 = sha256 or os.environ.get("RESEARCH_DB_SHA256") or DB_SHA256
@@ -62,19 +76,43 @@ def rows(con, sql, *args):
     return [dict(r) for r in con.execute(sql, args)]
 
 
+def find_application(con, text):
+    """The application whose DOL case number is `text` (e.g. I-200-25273-349981), or None."""
+    t = (text or "").strip().upper()
+    if not (len(t) > 2 and t[1] == "-" and t[0] in "IH"):
+        return None
+    r = rows(con, "SELECT case_number, employer_id FROM applications WHERE case_number = ?", t)
+    return r[0] if r else None
+
+
+_RESULT_COLS = """e.employer_id, e.program, e.employer_name, e.dba, e.city, e.state, e.fein,
+               e.n_applications, e.willful_violator,
+               (SELECT COUNT(*) FROM matches m WHERE m.employer_id = e.employer_id) AS n_cases"""
+
+
+def search_employers_by_id(con, employer_id):
+    """The search-result row for one employer."""
+    return rows(con, f"SELECT {_RESULT_COLS} FROM employers e WHERE e.employer_id = ?", employer_id)
+
+
 def search_employers(con, text, limit=50):
-    """Employers whose name or DBA contains the search text, after the same cleaning as matching.
+    """Employers whose name or DBA contains the search text, after the same cleaning as matching,
+    or whose tax ID is the search text.
 
     Ranked by exact name first, then by number of applications.
     """
+    cols = _RESULT_COLS
+    tax_id = clean_fein(text) if (text or "").strip().replace("-", "").isdigit() else ""
+    if tax_id:  # a 9-digit tax ID (FEIN), with or without its dash
+        return rows(con, f"""
+            SELECT {cols} FROM employers e WHERE (';' || e.fein || ';') LIKE ?
+            ORDER BY e.n_applications DESC LIMIT ?""", f"%;{tax_id};%", limit)
     key = clean_name(text)
     if not key:
         return []
     like = f"%{key}%"
-    return rows(con, """
-        SELECT e.employer_id, e.program, e.employer_name, e.dba, e.city, e.state, e.fein,
-               e.n_applications, e.willful_violator,
-               (SELECT COUNT(*) FROM matches m WHERE m.employer_id = e.employer_id) AS n_cases
+    return rows(con, f"""
+        SELECT {cols}
         FROM employers e
         WHERE e.name_clean LIKE ? OR e.dba_clean LIKE ?
         ORDER BY (e.name_clean = ?) DESC, e.n_applications DESC
@@ -133,17 +171,220 @@ def cases(con, employer_id):
         ORDER BY v.findings_end_date DESC, v.case_id DESC""", employer_id)
 
 
+# Columns that hold the same thing under different names in the H-1B (LCA) and H-2B files.
+_WORKERS = "COALESCE(a.total_worker_positions, a.total_workers_requested)"
+_WAGE_FROM = "COALESCE(a.wage_rate_of_pay_from, a.basic_wage_rate_from)"
+_WAGE_TO = "COALESCE(a.wage_rate_of_pay_to, a.basic_wage_rate_to)"
+_WAGE_UNIT = "COALESCE(a.wage_unit_of_pay, a.per)"
+_BEGIN = "COALESCE(NULLIF(a.begin_date, ''), a.requested_begin_date)"
+_END = "COALESCE(NULLIF(a.end_date, ''), a.requested_end_date)"
+_LAWFIRM = "NULLIF(TRIM(a.lawfirm_name_business_name), '')"
+_ATTORNEY = ("NULLIF(TRIM(COALESCE(NULLIF(a.agent_attorney_first_name, ''), a.attorney_agent_first_name, '') || ' ' ||"
+             " COALESCE(NULLIF(a.agent_attorney_last_name, ''), a.attorney_agent_last_name, '')), '')")
+# Hours, weeks, ... in a year, to compare a wage with the prevailing wage when units differ.
+PER_YEAR = {"Hour": 2080, "Week": 52, "Bi-Weekly": 26, "Month": 12, "Year": 1}
+
+
 def applications(con, employer_id, limit=None):
-    """Visa applications filed by this employer, with the DOL file each came from."""
-    sql = """
-        SELECT a.case_number, a.case_status, a.visa_class, a.fein, a.source_file,
+    """Visa applications filed by this employer, newest decision first, with the job, worksite,
+    offered and prevailing wage, representation and the DOL file each came from."""
+    sql = f"""
+        SELECT a.case_number, a.program, a.case_status, a.visa_class, a.decision_date, a.fein,
+               a.job_title, a.soc_code, a.soc_title, {_WORKERS} AS workers,
+               {_BEGIN} AS begin_date, {_END} AS end_date,
+               a.worksite_city, a.worksite_state, {_WAGE_FROM} AS wage_from, {_WAGE_TO} AS wage_to,
+               {_WAGE_UNIT} AS wage_unit, a.prevailing_wage, a.pw_unit_of_pay, a.pw_wage_level,
+               {_LAWFIRM} AS lawfirm, a.source_file,
                s.file AS table_file, s.sha256 AS table_sha256, s.urls AS table_urls
         FROM applications a JOIN sources s USING (source_id)
-        WHERE a.employer_id = ? ORDER BY a.case_number"""
+        WHERE a.employer_id = ? ORDER BY a.decision_date DESC, a.case_number"""
     out = rows(con, sql + " LIMIT ?", employer_id, limit) if limit else rows(con, sql, employer_id)
     for r in out:
         r["dol_file_url"] = dol_file_url(r["source_file"], r.pop("table_urls"))
     return out
+
+
+def application(con, case_number):
+    """One application with every disclosure column, its employer and its source file."""
+    r = rows(con, """
+        SELECT a.*, e.employer_name AS employer_row_name, e.city AS employer_row_city,
+               e.state AS employer_row_state,
+               s.file AS table_file, s.sha256 AS table_sha256, s.urls AS table_urls
+        FROM applications a JOIN employers e USING (employer_id) JOIN sources s ON s.source_id = a.source_id
+        WHERE a.case_number = ?""", case_number.strip().upper())
+    if not r:
+        return None
+    r = r[0]
+    r["dol_file_url"] = dol_file_url(r["source_file"], r.pop("table_urls"))
+    return r
+
+
+# How the application page groups the disclosure columns. A column is shown in the first section
+# whose prefixes or names match it; anything else goes under "Other answers on the form".
+APPLICATION_SECTIONS = [
+    ("Case", ["case_number", "case_status", "visa_class", "received_date", "decision_date",
+              "original_cert_date", "cap_exempt", "cap_subject_workers", "cap_exempt_workers",
+              "nature_of_temporary_need", "public_disclosure"]),
+    ("Job", ["job_title", "soc_code", "soc_title", "full_time_position", "begin_date", "end_date",
+             "requested_begin_date", "requested_end_date", "employment_begin_date", "employment_end_date",
+             "total_worker_positions", "total_workers_requested", "total_workers_certified",
+             "new_employment", "continued_employment", "change_previous_employment",
+             "new_concurrent_employment", "change_employer", "amended_petition", "education_level",
+             "training_months", "work_experience_months", "supervise_other_emp", "supervise_how_many",
+             "special_requirements", "anticipated_number_of_hours", "*_hours", "hourly_schedule_*",
+             "on_the_job_training_available"]),
+    ("Worksite", ["worksite_*", "total_worksite_locations", "other_worksite_location", "secondary_entity*",
+                  "msa_name_oes_area_title"]),
+    ("Wages", ["wage_*", "prevailing_wage", "pw_*", "basic_wage_*", "per", "overtime_*",
+               "additional_wage_conditions", "pwd_case_number_*", "emergency_filing_pwd_attached",
+               "deductions_from_pay", "board_lodging_other_facilities", "emp_provided_tools_equipment",
+               "daily_transportation"]),
+    ("Employer", ["employer_name", "trade_name_dba", "employer_address*", "employer_city", "employer_state",
+                  "employer_postal_code", "employer_country", "employer_province", "employer_phone*",
+                  "employer_fein", "naics_code", "type_of_employer", "h1b_dependent", "willful_violator",
+                  "support_h1b", "statutory_basis"]),
+    ("Employer point of contact", ["employer_poc_*"]),
+    ("Attorney or agent", ["agent_representing_employer", "type_of_representation", "agent_attorney_*",
+                           "attorney_agent_*", "lawfirm_*", "state_of_highest_court",
+                           "name_of_highest_state_court", "agent_agreement_attached", "agent_mspa_attached"]),
+    ("Preparer", ["preparer_*"]),
+    ("Recruitment", ["job_order_to_swa", "swa_state", "job_order_submit_date", "phone_to_apply",
+                     "email_to_apply", "website_to_apply", "foreign_labor_recruiter"]),
+]
+# Columns the build adds, not part of the DOL form.
+_NOT_ON_FORM = {"program", "employer_id", "fein", "source_file", "source_id", "table_file", "table_sha256",
+                "dol_file_url", "employer_row_name", "employer_row_city", "employer_row_state"}
+FIELD_LABELS = {"soc_code": "SOC code", "soc_title": "SOC title", "naics_code": "NAICS code",
+                "employer_fein": "Employer tax ID (FEIN)", "lawfirm_business_fein": "Law firm tax ID (FEIN)",
+                "preparer_fein": "Preparer tax ID (FEIN)", "trade_name_dba": "Trade name (DBA)",
+                "employer_poc_email": "Email", "pw_wage_level": "Prevailing wage level",
+                "pw_unit_of_pay": "Prevailing wage unit", "pw_oes_year": "Prevailing wage OES year",
+                "pw_tracking_number": "Prevailing wage tracking number", "per": "Wage unit",
+                "msa_name_oes_area_title": "Wage area (MSA)", "swa_state": "State workforce agency",
+                "job_order_to_swa": "Job order sent to state workforce agency", "h1b_dependent": "H-1B dependent",
+                "support_h1b": "Supports H-1B (exempt worker)", "lawfirm_name_business_name": "Law firm or business",
+                "agree_to_lc_statement": "Agrees to labor condition statements",
+                "emp_mspa_attached": "MSPA registration attached", "agent_mspa_attached": "Agent MSPA registration attached",
+                "supervise_other_emp": "Supervises other employees", "supervise_how_many": "Supervises how many",
+                "emp_provided_tools_equipment": "Employer provides tools and equipment",
+                "board_lodging_other_facilities": "Board, lodging or other facilities",
+                "emp_client_appendix_b_attached": "Employer-client Appendix B attached",
+                "full_time_position": "Full-time position", "on_the_job_training_available": "On-the-job training available"}
+
+
+def field_label(col):
+    if col in FIELD_LABELS:
+        return FIELD_LABELS[col]
+    words = col
+    for prefix in ("employer_poc_", "agent_attorney_", "attorney_agent_", "preparer_"):
+        if words.startswith(prefix):
+            words = words[len(prefix):]
+    words = words.replace("address1", "address").replace("address2", "address line 2")
+    words = words.replace("pwd", "PWD").replace("_", " ").replace(" ext", " extension")
+    words = re.sub(r"\bappendix ([a-d])\b", lambda m: "appendix " + m.group(1).upper(), words)
+    return words[:1].upper() + words[1:]
+
+
+def _section_of(col):
+    from fnmatch import fnmatch
+    for title, pats in APPLICATION_SECTIONS:
+        if any(fnmatch(col, p) for p in pats):
+            return title
+    return "Other answers on the form"
+
+
+def application_sections(app):
+    """The application's non-blank form answers, grouped into sections in a fixed order."""
+    order = [t for t, _ in APPLICATION_SECTIONS] + ["Other answers on the form"]
+    out = {t: [] for t in order}
+    for col, val in app.items():
+        if col in _NOT_ON_FORM or val is None or str(val).strip() == "":
+            continue
+        if isinstance(val, float) and val.is_integer():
+            val = int(val)
+        out[_section_of(col)].append({"field": col, "label": field_label(col), "value": val})
+    return [{"title": t, "fields": out[t]} for t in order if out[t]]
+
+
+def application_highlights(app):
+    """The headline numbers of one application, the same for H-1B and H-2B forms."""
+    unit = app.get("wage_unit_of_pay") or app.get("per")
+    offered = app.get("wage_rate_of_pay_from") if app.get("wage_rate_of_pay_from") is not None \
+        else app.get("basic_wage_rate_from")
+    offered_to = app.get("wage_rate_of_pay_to") if app.get("wage_rate_of_pay_from") is not None \
+        else app.get("basic_wage_rate_to")
+    prevailing, pw_unit = app.get("prevailing_wage"), app.get("pw_unit_of_pay")
+    a, b = _annual(offered, unit), _annual(prevailing, pw_unit)
+    return {
+        "job_title": app.get("job_title"), "soc_title": app.get("soc_title"),
+        "workers": first_present(app.get("total_worker_positions"), app.get("total_workers_requested")),
+        "workers_certified": app.get("total_workers_certified"),
+        "begin_date": app.get("begin_date") or app.get("requested_begin_date"),
+        "end_date": app.get("end_date") or app.get("requested_end_date"),
+        "worksite": ", ".join(x for x in (app.get("worksite_city"), app.get("worksite_state")) if x),
+        "wage_from": offered, "wage_to": offered_to or None, "wage_unit": unit,
+        "prevailing_wage": prevailing, "pw_unit": pw_unit, "pw_wage_level": app.get("pw_wage_level"),
+        "wage_vs_prevailing": a / b - 1 if a and b else None,
+        "lawfirm": (app.get("lawfirm_name_business_name") or "").strip() or None,
+    }
+
+
+def first_present(*vals):
+    return next((v for v in vals if v is not None and v != ""), None)
+
+
+def _annual(amount, unit):
+    per = PER_YEAR.get(unit or "")
+    return amount * per if amount is not None and per else None
+
+
+# Offered wage as a share of the prevailing wage: the bands of the wage chart.
+WAGE_BANDS = [(None, 1.0, "Below prevailing"), (1.0, 1.02, "0-2% above"), (1.02, 1.1, "2-10% above"),
+              (1.1, 1.25, "10-25% above"), (1.25, 1.5, "25-50% above"), (1.5, None, "50%+ above")]
+
+
+def wage_band(ratio):
+    for lo, hi, label in WAGE_BANDS:
+        if (lo is None or ratio >= lo) and (hi is None or ratio < hi):
+            return label
+
+
+def employer_profile(con, employer_id):
+    """What this employer's applications ask for: jobs, worksites, who filed them, and how the
+    offered wage compares with the prevailing wage (H-1B, where both are on the form)."""
+    top = lambda expr, n=10, where="1": rows(con, f"""
+        SELECT {expr} AS name, COUNT(*) AS applications, SUM({_WORKERS}) AS workers
+        FROM applications a WHERE a.employer_id = ? AND {where} AND name IS NOT NULL AND name != ''
+        GROUP BY 1 ORDER BY applications DESC, name LIMIT {n}""", employer_id)
+    jobs = rows(con, f"""
+        SELECT a.soc_code, a.soc_title, COUNT(*) AS applications, SUM({_WORKERS}) AS workers
+        FROM applications a WHERE a.employer_id = ? AND COALESCE(a.soc_title, '') != ''
+        GROUP BY 1, 2 ORDER BY applications DESC LIMIT 10""", employer_id)
+    for j in jobs:
+        titles = [r["job_title"] for r in rows(con, """
+            SELECT job_title, COUNT(*) AS n FROM applications
+            WHERE employer_id = ? AND soc_code IS ? AND soc_title = ? AND COALESCE(job_title, '') != ''
+            GROUP BY 1 ORDER BY n DESC, job_title""", employer_id, j["soc_code"], j["soc_title"])]
+        j["job_titles"], j["more_titles"] = titles[:5], max(0, len(titles) - 5)
+    bands = {label: 0 for _, _, label in WAGE_BANDS}
+    levels = {}
+    for r in con.execute("""
+            SELECT wage_rate_of_pay_from, wage_unit_of_pay, prevailing_wage, pw_unit_of_pay, pw_wage_level
+            FROM applications WHERE employer_id = ? AND program = 'H-1B'""", (employer_id,)):
+        offered, prevailing = _annual(r[0], r[1]), _annual(r[2], r[3])
+        if offered and prevailing:
+            bands[wage_band(offered / prevailing)] += 1
+        if r[4]:
+            levels[r[4]] = levels.get(r[4], 0) + 1
+    return {
+        "jobs": jobs,
+        "worksites": top("a.worksite_city || ', ' || a.worksite_state", where="a.worksite_city != ''"),
+        "worksite_states": top("a.worksite_state", n=60),
+        "lawfirms": top(_LAWFIRM),
+        "attorneys": top(_ATTORNEY),
+        "wage_bands": [{"band": k, "applications": v} for k, v in bands.items()],
+        "wage_levels": [{"level": k, "applications": levels[k]} for k in sorted(levels)],
+    }
 
 
 def dol_file_url(csv_name, urls):

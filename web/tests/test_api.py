@@ -44,6 +44,21 @@ class ApiTests(unittest.TestCase):
         self.assertEqual([(r["program"], r["state"]) for r in d["same_tax_id"]], [("H-1B", "CA"), ("H-2B", "TX")])
         self.assertEqual(self.client.get("/api/employers/999999").status_code, 404)
 
+    def test_application_page_and_case_number_search(self):
+        d = self.client.get("/api/applications/i-1").json()
+        self.assertEqual((d["application"]["case_number"], d["application"]["employer_id"]),
+                         ("I-1", self.acme_tx()["employer_id"]))
+        self.assertEqual(d["highlights"]["job_title"], "Developer")
+        self.assertIn("Employer point of contact", [s["title"] for s in d["sections"]])
+        self.assertEqual(self.client.get("/api/applications/I-404").status_code, 404)
+        hits = self.client.get("/api/search", params={"q": "I-1"}).json()
+        self.assertEqual([(h["employer_name"], h["case_number"]) for h in hits], [("Acme Software LLC", "I-1")])
+        e = self.client.get(f"/api/employers/{self.acme_tx()['employer_id']}").json()
+        self.assertEqual([j["soc_title"] for j in e["profile"]["jobs"]], ["Software Developers"])
+        rows = self.client.get(f"/api/employers/{self.acme_tx()['employer_id']}/applications").json()["rows"]
+        self.assertEqual((rows[0]["job_title"], rows[0]["worksite_city"], rows[0]["lawfirm"]),
+                         ("Developer", "Austin", "Law Firm LLP"))
+
     def test_applications_are_paged(self):
         eid = self.acme_tx()["employer_id"]
         with mock.patch.object(api, "PAGE_SIZE", 1):
