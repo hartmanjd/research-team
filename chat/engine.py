@@ -99,8 +99,11 @@ def cost_usd(model, usage):
             + usage["cache_read_input_tokens"] * p_in * 0.1 + usage["output_tokens"] * p_out) / 1e6
 
 
-def answer(con, question, history=(), client=None, model=MODEL, effort=None):
+def answer(con, question, history=(), client=None, model=MODEL, effort=None, on_event=None):
     """Answer `question`, with earlier turns in `history` as [{"role", "content"}] text messages.
+
+    `on_event`, when given, is called with {"type": "tool", "name", "input"} as each lookup starts,
+    so a page can show progress while the answer is being written.
 
     Returns the linked answer, the raw text, citations, unverified citations, the tool calls made
     (name, input, error), token usage, estimated cost and the stop reason.
@@ -126,6 +129,8 @@ def answer(con, question, history=(), client=None, model=MODEL, effort=None):
             if block.type != "tool_use":
                 continue
             call = {"name": block.name, "input": block.input}
+            if on_event:
+                on_event({"type": "tool", **call})
             try:
                 out = run_tool(con, block.name, block.input)
             except (KeyError, LookupError, ValueError, TypeError) as e:
