@@ -16,6 +16,7 @@ AI tools can query the data through a read-only MCP server. No account or key is
 - `get_application`: one application by its DOL case number, such as I-200-25126-941960
 - `watchlist`: employers with linked WHD cases, ranked and filtered by program, state, industry and year
 - `state_stats` and `industry_stats`: per-state and per-industry counts and rates
+- `representatives`: law firms, agent businesses and attorneys or agents across all the employers they file for, with how many clients have WHD cases or visa-program violations against the typical rate
 - `data_overview`: totals for the whole database
 
 ## What the data means
@@ -30,6 +31,7 @@ AI tools can query the data through a read-only MCP server. No account or key is
 - Employer: https://visa-employer-watch.onrender.com/#/employer/<employer_id>
 - Application: https://visa-employer-watch.onrender.com/#/application/<case_number>
 - Watchlist: https://visa-employer-watch.onrender.com/#/watchlist
+- Law firm or agent: https://visa-employer-watch.onrender.com/#/representative/<kind>/<key> (kind firm or person; key URL-encoded)
 - DOL debarments, matched to filers: https://visa-employer-watch.onrender.com/#/debarments
 
 ## JSON API

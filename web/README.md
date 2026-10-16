@@ -49,6 +49,8 @@ Settings (environment variables, all optional):
 | `#/application/<case number>` | One application: headline job, workers, wages and dates, then every field of its DOL disclosure record by section |
 | `#/watchlist` | Every employer with linked WHD cases, sortable, with filters (program, state, industry, year, visa violations, applications) kept in the address |
 | `#/map` | A tile map of states colored by cases per 100 visa employers, share with a case, back wages or case count, with top-state bars and a table |
+| `#/representatives` | Law firms, agent businesses and individual attorneys or agents, ranked by how many of their client employers have visa-program violations, with the rate against typical for the same mix of programs |
+| `#/representative/<kind>/<key>` | One firm or person: totals, spellings, tax IDs and every client employer with its WHD record. Employer pages link here from a "Who else their representatives file for" panel |
 | `#/debarments` | DOL's published debarment lists (H-1B, H-2A, H-2B, permanent labor certification), each entry with its period, status and reason, and the FY2025 visa filers that match it by name (and state when DOL gives one) |
 | `#/industries` | NAICS sectors: a size-against-rate bubble chart, bars for share with a case and back wages, and a table |
 | `#/ask` | Ask a question in plain English. Claude answers from the database with the lookups in `chat/`, shows each lookup as it runs, and links every employer, WHD case and application it cites. Follow-up questions keep the last three questions and answers |
@@ -73,6 +75,8 @@ that lists the MCP address, its tools, what the data means and which pages to ci
 | `GET /api/sectors?program=&visa_only=` | The same numbers per NAICS sector |
 | `GET /api/overview` | Headline totals and the lookup page's starting points (computed once per server start) |
 | `GET /api/debarments` | Every DOL debarment entry with its status and matching visa employers. The employer endpoint also returns the entries matching that employer, with its applications decided inside each debarment period |
+| `GET /api/representatives?kind=&program=&q=&sort=&min_clients=` | Law firms and agent businesses (`kind=firm`) or attorneys and agents (`kind=person`) across all the employers they file for: clients, clients with WHD cases, clients with visa-program violations against the rate for the same mix of programs, debarred clients and back wages |
+| `GET /api/representatives/{kind}/{key}` | One representative: name variants, tax IDs, firms on the form (for a person) and every client employer with its WHD record. The employer endpoint also returns `representatives`, the firms and people on its applications |
 | `GET /api/meta` | States, NAICS sector names and the source files behind the database |
 | `POST /mcp` | The chat's eight lookups as a read-only MCP server (see `chat/README.md` for connecting Claude Desktop) |
 | `GET /api/ask` | Whether the Ask page can take questions (`enabled`, or the `reason` it can't) |

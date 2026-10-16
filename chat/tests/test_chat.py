@@ -66,6 +66,18 @@ class ChatTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             tools.run_tool(self.con, "drop_table", {})
 
+    def test_representatives_tool_ranks_and_lists_clients(self):
+        e = tools.run_tool(self.con, "get_employer", {"employer_id": self.acme})
+        firm = next(r for r in e["representatives"] if r["kind"] == "firm")
+        self.assertEqual((firm["name"], firm["clients"]), ("Law Firm LLP", 1))
+        ranked = tools.run_tool(self.con, "representatives", {"min_clients": 1, "query": "law firm"})
+        self.assertEqual([r["key"] for r in ranked["rows"]], [firm["key"]])
+        self.assertIn("H-1B", ranked["overall_visa_violation_rate"])
+        one = tools.run_tool(self.con, "representatives", {"key": firm["key"]})
+        self.assertEqual([c["employer_id"] for c in one["clients_with_records"]], [self.acme])
+        with self.assertRaises(LookupError):
+            tools.run_tool(self.con, "representatives", {"key": "NOBODY"})
+
     def test_every_tool_has_a_runner_and_a_closed_schema(self):
         for t in tools.TOOLS:
             self.assertIn(t["name"], tools.RUNNERS)
