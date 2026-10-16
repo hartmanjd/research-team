@@ -224,6 +224,15 @@ class DownloadTests(unittest.TestCase):
             queries.download_db(self.target, self.url, "0" * 64)
         self.assertEqual(os.listdir(os.path.dirname(self.target)), [])
 
+    def test_an_older_layout_is_replaced(self):
+        con = sqlite3.connect(self.target)
+        con.execute("CREATE TABLE applications (case_number TEXT, case_status TEXT)")
+        con.commit()
+        con.close()
+        queries.download_db(self.target, self.url, self.sha)
+        con = queries.connect(self.target)
+        self.assertIsNotNone(queries.application(con, "I-1"))
+
     def test_existing_database_is_not_downloaded_again(self):
         open(self.target, "w").close()
         queries.download_db(self.target, "file:///does/not/exist.gz", "0" * 64)

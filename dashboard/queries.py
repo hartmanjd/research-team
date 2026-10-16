@@ -12,8 +12,8 @@ DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "h1b
 
 # A gzipped copy of research.db published as a GitHub release asset, for hosts (like Streamlit
 # Cloud) that only have the git checkout. The checksum is of the .gz file at that URL.
-DB_URL = "https://github.com/hartmanjd/research-team/releases/download/data-2026-10-15/research.db.gz"
-DB_SHA256 = "02e7ff6c96e2ac4cd8194bb8f9db7d581dd096e59c42a74f174126e50b931c67"
+DB_URL = "https://github.com/hartmanjd/research-team/releases/download/data-2026-10-16/research.db.gz"
+DB_SHA256 = "1d71bef037e6184b9ed319c2381ee61869084169a45f397d1bdb391ef876a26c"
 
 
 def connect(path=None):
@@ -27,14 +27,28 @@ def connect(path=None):
     return con
 
 
+def _older_layout(path):
+    """True for a database whose applications table predates the full disclosure columns."""
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            cols = {r[1] for r in con.execute("PRAGMA table_info(applications)")}
+        finally:
+            con.close()
+    except sqlite3.DatabaseError:
+        return False
+    return bool(cols) and "job_title" not in cols
+
+
 def download_db(path=None, url=None, sha256=None):
-    """Download the gzipped database to `path` if it is not there yet, and return the path.
+    """Download the gzipped database to `path` if it is not there yet (or is an older layout
+    without the full application columns), and return the path.
 
     The download is checked against its SHA-256 before it is unpacked, and written under a
     temporary name first, so a failed or wrong download never leaves a database behind.
     """
     path = os.path.abspath(path or os.environ.get("RESEARCH_DB") or DEFAULT_DB)
-    if os.path.exists(path):
+    if os.path.exists(path) and not _older_layout(path):
         return path
     url = url or os.environ.get("RESEARCH_DB_URL") or DB_URL
     sha256 = sha256 or os.environ.get("RESEARCH_DB_SHA256") or DB_SHA256

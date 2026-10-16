@@ -338,7 +338,7 @@ details.sources > summary { cursor: pointer; color: var(--ink-2); font-size: 14p
 .mini-h { font-size: 12px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; margin: 14px 0 8px; }
 .levels { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 14px; }
 .levels .chip b { font-variant-numeric: tabular-nums; }
-.bands { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; align-items: end; }
+.bands { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; align-items: start; }
 .band { text-align: center; cursor: default; }
 .band-bar { height: 120px; display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid var(--chart-grid); }
 .band-bar span { width: 70%; background: var(--series-1); border-radius: 4px 4px 0 0; min-height: 1px; }
