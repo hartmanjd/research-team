@@ -109,6 +109,15 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(len(client.requests), engine.MAX_TOOL_ROUNDS + 1)
         self.assertIn("more lookups than allowed", r["answer"])
 
+    def test_bare_case_numbers_from_tools_are_linked(self):
+        seen = {"employer": set(), "WHD case": set(), "application": {"I-200-25126-941960"}, "case_employer": {}}
+        text, cites, unverified = engine.link_citations(
+            "Application I-200-25126-941960 pays $10 [application I-200-25126-941960]; I-200-00000-000000 does not.",
+            seen)
+        self.assertEqual(text.count("](" + engine.SITE_URL + "/#/application/I-200-25126-941960)"), 2)
+        self.assertIn(" I-200-00000-000000 does not", text)
+        self.assertEqual((len(cites), unverified), (1, []))
+
     def test_grader(self):
         case = {"numbers": [3346196, 2], "cites": [("employer", "7")], "percents": [0.085]}
         good = {"raw": "LinkedIn had 2 cases and about $3.3 million in back wages (8.5% of employers).",
@@ -120,6 +129,10 @@ class ChatTests(unittest.TestCase):
                          ["no_unverified_citations", "number 3.3462e+06", "percent 8.5%"])
         self.assertTrue(chat_eval.grade({"no_data": True}, {"raw": "The data doesn't cover revenue.",
                                                             "citations": [], "unverified": []})["passed"])
+        written = {"raw": "Texas has five cases. The data can't tell us that.", "citations": [], "unverified": []}
+        self.assertTrue(chat_eval.grade({"numbers": [5], "mentions": [["TX", "Texas"]], "no_data": True},
+                                        written)["passed"])
+        self.assertFalse(chat_eval.grade({"numbers": [6]}, written)["passed"])
 
     def test_eval_cases_build_from_the_database(self):
         cases = chat_eval.build_cases(self.con)

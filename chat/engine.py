@@ -38,6 +38,8 @@ What the data means:
 Write for a non-specialist: lead with the answer, keep it short, use a small table for lists of more than three rows, and give numbers as the tools return them (round only for readability, and say so)."""
 
 _MARKER = re.compile(r"\[(employer|WHD case|application) ([A-Za-z0-9-]+)\]")
+# A DOL case number written without a marker, outside a link the marker pass already made.
+_BARE_CASE = re.compile(r"(?<!\[application )(?<!/application/)\b([HI]-\d{3}-\d{5}-\d{6})\b")
 
 
 def _seen_ids(result, seen):
@@ -84,7 +86,17 @@ def link_citations(text, seen):
             return f"{m.group(0)} (unverified)"
         return f"[{kind} {key}]({url})" if url else m.group(0)
 
-    return _MARKER.sub(sub, text), citations, unverified
+    def sub_bare(m):
+        key = m.group(1).upper()
+        if key not in seen["application"]:
+            return m.group(0)
+        url = f"{SITE_URL}/#/application/{key}"
+        c = {"kind": "application", "id": key, "url": url, "verified": True}
+        if c not in citations:
+            citations.append(c)
+        return f"[{key}]({url})"
+
+    return _BARE_CASE.sub(sub_bare, _MARKER.sub(sub, text)), citations, unverified
 
 
 def cost_usd(model, usage):

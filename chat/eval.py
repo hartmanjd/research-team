@@ -16,9 +16,24 @@ from .tools import q, run_tool
 # A number with optional $, thousands commas, decimals and a K/M/B or thousand/million/billion suffix.
 _NUM = re.compile(r"\$?(\d[\d,]*(?:\.\d+)?)\s*(k|m|b|thousand|million|billion)?\b", re.I)
 _SCALE = {"k": 1e3, "thousand": 1e3, "m": 1e6, "million": 1e6, "b": 1e9, "billion": 1e9}
+# Small counts are often written out ("Five cases").
+_WORDS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve".split())}
+_WORD = re.compile(r"\b(" + "|".join(_WORDS) + r")\b", re.I)
+STATE_NAMES = {"AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
+               "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware", "DC": "District of Columbia",
+               "FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois", "IN": "Indiana",
+               "IA": "Iowa", "KS": "Kansas", "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+               "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi", "MO": "Missouri",
+               "MT": "Montana", "NE": "Nebraska", "NV": "Nevada", "NH": "New Hampshire", "NJ": "New Jersey",
+               "NM": "New Mexico", "NY": "New York", "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio",
+               "OK": "Oklahoma", "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
+               "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah", "VT": "Vermont",
+               "VA": "Virginia", "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+               "PR": "Puerto Rico", "GU": "Guam", "VI": "U.S. Virgin Islands"}
 NO_DATA_WORDS = ("not in the data", "doesn't cover", "does not cover", "doesn't include", "does not include",
                  "no data", "not available", "don't have", "do not have", "isn't in", "is not in", "can't answer",
-                 "cannot answer", "not covered", "doesn't contain", "does not contain")
+                 "cannot answer", "not covered", "doesn't contain", "does not contain", "can't tell", "cannot tell",
+                 "can't give", "cannot give", "can't say", "cannot say", "doesn't show", "does not show")
 
 
 def numbers_in(text):
@@ -29,6 +44,7 @@ def numbers_in(text):
         digits, scale = m.group(1).replace(",", ""), _SCALE.get((m.group(2) or "").lower(), 1)
         decimals = len(digits.split(".")[1]) if "." in digits else 0
         out.append((float(digits) * scale, 0.5 * 10 ** -decimals * scale))
+    out += [(float(_WORDS[m.group(1).lower()]), 0.5) for m in _WORD.finditer(text)]
     return out
 
 
@@ -56,7 +72,9 @@ def grade(case, result):
     for kind, ident in case.get("cites", []):
         checks[f"cites {kind} {ident}"] = (kind, str(ident)) in cited
     for word in case.get("mentions", []):
-        checks[f"mentions {word}"] = word.lower() in text.lower()
+        # A list is alternative spellings, such as a state's code and its name.
+        options = word if isinstance(word, list) else [word]
+        checks[f"mentions {options[0]}"] = any(w.lower() in text.lower() for w in options)
     if case.get("no_data"):
         checks["says the data doesn't cover it"] = any(w in text.lower() for w in NO_DATA_WORDS)
     return {"checks": checks, "passed": all(checks.values())}
@@ -113,7 +131,7 @@ def build_cases(con):
     for sort, label in [("cases", "the most linked Wage and Hour cases"), ("back_wages", "the most back wages")]:
         r = run_tool(con, "state_stats", {"sort_by": sort, "limit": 1})["rows"][0]
         add("state", f"Which employer state has {label} among visa employers?",
-            mentions=[r["state"]], numbers=[r[sort]])
+            mentions=[[r["state"], STATE_NAMES.get(r["state"], r["state"])]], numbers=[r[sort]])
     for st in ("TX", "CA", "NY"):
         r = next(x for x in q.state_stats(con) if x["state"] == st)
         add("state", f"What share of visa employers in {st} have a linked Wage and Hour case?",
