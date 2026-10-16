@@ -63,7 +63,8 @@ class ApiTests(unittest.TestCase):
         o = self.client.get("/api/overview").json()
         self.assertEqual((o["totals"]["employers"], o["totals"]["cases"]), (4, 2))
         self.assertEqual(o["top_back_wages"][0]["employer_name"], "Acme Software LLC")
-        self.assertEqual((o["willful"], o["sectors"]), ([], []))
+        self.assertEqual([r["visa_violations"] for r in o["visa_violators"]], [2])
+        self.assertEqual(o["sectors"], [])
 
     def test_applications_are_paged(self):
         eid = self.acme_tx()["employer_id"]

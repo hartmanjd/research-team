@@ -1,7 +1,7 @@
 """Read-only lookups on research.db for the dashboard.
 
 Plain functions over a sqlite3 connection, returning lists of dicts, so they can
-be tested without Streamlit. See h1b-data/README.md for the tables.
+be tested without a web server. See h1b-data/README.md for the tables.
 """
 import gzip, hashlib, os, re, shutil, sqlite3, sys, urllib.request
 
@@ -10,8 +10,8 @@ from employer_keys import clean_name, fein as clean_fein  # noqa: E402
 
 DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "h1b-data", "research.db")
 
-# A gzipped copy of research.db published as a GitHub release asset, for hosts (like Streamlit
-# Cloud) that only have the git checkout. The checksum is of the .gz file at that URL.
+# A gzipped copy of research.db published as a GitHub release asset, for hosts (like Render)
+# that only have the git checkout. The checksum is of the .gz file at that URL.
 DB_URL = "https://github.com/hartmanjd/research-team/releases/download/data-2026-10-16/research.db.gz"
 DB_SHA256 = "1d71bef037e6184b9ed319c2381ee61869084169a45f397d1bdb391ef876a26c"
 
@@ -480,8 +480,9 @@ def watchlist_totals(con, **filters):
 def overview(con, top=5, min_sector_employers=100):
     """Headline numbers and starting points for the lookup page.
 
-    `top_back_wages`: employers with the most back wages in linked WHD cases. `willful`: employers that
-    answered Yes to the willful violator question on most of their applications, most applications first.
+    `top_back_wages`: employers with the most back wages in linked WHD cases. `visa_violators`: employers
+    whose linked cases found violations of their own visa program (H-1B or H-2B), most applications first;
+    `visa_violations` counts those violations.
     `sectors`: industries with at least `min_sector_employers` visa employers, by share with a case.
     """
     totals = rows(con, """
@@ -489,18 +490,14 @@ def overview(con, top=5, min_sector_employers=100):
                (SELECT COUNT(*) FROM applications) AS applications,
                (SELECT COUNT(DISTINCT employer_id) FROM matches) AS employers_with_cases""")[0]
     totals.update(watchlist_totals(con))
-    willful = [r for r in rows(con, f"""
-        SELECT e.employer_id, e.employer_name, e.city, e.state, e.program, e.n_applications,
-               {WILLFUL_COLS},
-               (SELECT COUNT(*) FROM matches m WHERE m.employer_id = e.employer_id) AS n_cases
-        FROM employers e WHERE e.willful_violator = 1
-        ORDER BY e.n_applications DESC, e.employer_id""") if r["willful_violator"]]
-    n_willful = len(willful)
-    willful = willful[:top]
+    visa = watchlist(con, visa_violations_only=True)
+    for r in visa:
+        r["visa_violations"] = r["h1b_violations"] if r["program"] == "H-1B" else r["h2b_violations"]
+    visa.sort(key=lambda r: (-r["n_applications"], r["employer_id"]))
     sectors = [r for r in sector_stats(con) if r["employers"] >= min_sector_employers]
     sectors.sort(key=lambda r: -r["share_with_cases"])
-    return {"totals": totals, "top_back_wages": watchlist(con)[:top], "willful": willful,
-            "n_willful": n_willful, "sectors": sectors[:top]}
+    return {"totals": totals, "top_back_wages": watchlist(con)[:top], "visa_violators": visa[:top],
+            "n_visa_violators": len(visa), "sectors": sectors[:top]}
 
 
 # NAICS sectors (first two digits of the code). Three sectors span several two-digit prefixes.

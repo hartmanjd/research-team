@@ -199,16 +199,13 @@ class QueryTests(unittest.TestCase):
         self.assertEqual((t["employers"], t["applications"], t["employers_with_cases"]), (4, 5, 2))
         self.assertEqual((t["cases"], t["back_wages"], t["penalties"]), (2, 1500.0, 250.0))
         self.assertEqual([r["program"] for r in o["top_back_wages"]], ["H-1B", "H-2B"])
-        self.assertEqual((o["willful"], o["n_willful"]), ([], 0))
+        # Case 10 found 2 H-1B violations; it links to Acme TX in both programs, but only the H-1B
+        # employer violated its own program.
+        self.assertEqual(o["n_visa_violators"], 1)
+        self.assertEqual([(r["employer_name"], r["program"], r["n_applications"], r["visa_violations"])
+                          for r in o["visa_violators"]], [("Acme Software LLC", "H-1B", 2, 2)])
         self.assertEqual([r["sector"] for r in o["sectors"]], ["11"])
         self.assertEqual(queries.overview(self.con)["sectors"], [])  # fewer than 100 employers
-        # A willful violator is listed with its applications and linked cases.
-        con = self.willful_db(["I-1", "I-2"])
-        o = queries.overview(con)
-        con.close()
-        self.assertEqual(o["n_willful"], 1)
-        self.assertEqual([(r["employer_name"], r["n_applications"], r["willful_yes"], r["n_cases"]) for r in o["willful"]],
-                         [("Acme Software LLC", 2, 2, 2)])
 
     def willful_db(self, yes_cases):
         """A copy of the test database where the applications `yes_cases` answer Yes to the willful
@@ -232,7 +229,11 @@ class QueryTests(unittest.TestCase):
         self.assertEqual((hit["willful_yes"], hit["willful_violator"]), (1, 0))
         self.assertEqual({r["willful_violator"] for r in queries.watchlist(con)}, {0})
         o = queries.overview(con)
-        self.assertEqual((o["willful"], o["n_willful"]), ([], 0))
+        # Case 10 found 2 H-1B violations; it links to Acme TX in both programs, but only the H-1B
+        # employer violated its own program.
+        self.assertEqual(o["n_visa_violators"], 1)
+        self.assertEqual([(r["employer_name"], r["program"], r["n_applications"], r["visa_violations"])
+                          for r in o["visa_violators"]], [("Acme Software LLC", "H-1B", 2, 2)])
         con.close()
         # Yes on both applications makes it a self-reported willful violator everywhere.
         con = self.willful_db(["I-1", "I-2"])

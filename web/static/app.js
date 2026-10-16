@@ -160,13 +160,13 @@ async function homeOverview() {
         <a class="more" href="#/watchlist">Full Watchlist →</a>
       </div>
       <div class="card panel start">
-        <h3>Self-reported willful violators</h3>
-        <div class="sub">${n(o.n_willful)} employers answered Yes to "willful violator" on most of their FY2025 applications. Most applications first.</div>
-        <div class="start-rows">${o.willful.map((r) => `
+        <h3>Visa violators still filing</h3>
+        <div class="sub">${n(o.n_visa_violators)} employers had WHD cases that found violations of their own visa program, and still filed in FY2025. Most applications first.</div>
+        <div class="start-rows">${o.visa_violators.map((r) => `
           <a class="start-row" href="#/employer/${r.employer_id}" data-employer>
-            <span class="who"><span class="nm">${esc(r.employer_name)}</span><span class="wh">${esc(titleCase(r.city))}, ${esc(r.state)} · ${r.n_cases ? `${n(r.n_cases)} linked case${r.n_cases === 1 ? "" : "s"}` : "no linked cases"}</span></span>
+            <span class="who"><span class="nm">${esc(r.employer_name)}</span><span class="wh">${esc(titleCase(r.city))}, ${esc(r.state)} · ${n(r.visa_violations)} ${esc(r.program)} violation${r.visa_violations === 1 ? "" : "s"}</span></span>
             <span class="v">${n(r.n_applications)}<small>apps</small></span></a>`).join("")}</div>
-        <span class="more muted">Flag shown on each employer's page</span>
+        <a class="more" href="#/watchlist?visa_only=1&sort=n_applications">All visa violators →</a>
       </div>
       <div class="card panel start">
         <h3>Industries with the most cases</h3>
