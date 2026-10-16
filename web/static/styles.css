@@ -17,6 +17,10 @@
   --ok-soft: #e5f4ea;
   --violet: #6d28d9;
   --violet-soft: #f0eafd;
+  --good: #15803d;
+  --good-soft: #def2e4;
+  --bad: #c81e1e;
+  --bad-soft: #fde8e8;
   --shadow: 0 1px 2px rgba(20, 26, 38, .04), 0 4px 16px rgba(20, 26, 38, .05);
   --radius: 14px;
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -44,6 +48,10 @@
     --ok-soft: #14301f;
     --violet: #b79bff;
     --violet-soft: #2a2145;
+    --good: #6fd391;
+    --good-soft: #14301f;
+    --bad: #ff7b7b;
+    --bad-soft: #3a1a1c;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
   }
 }
@@ -110,6 +118,16 @@ h2.section .count { color: var(--ink-3); font-weight: 500; font-size: 14px; }
 .tile .value { font-size: 28px; font-weight: 650; letter-spacing: -.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .tile .sub { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
 .tile.alert .value { color: var(--danger); }
+/* Back wages found are money recovered for workers (green); penalties are sanctions (red). */
+.tile.good .value, .good-num, .good-text { color: var(--good); }
+.tile.bad .value, .bad-text { color: var(--bad); }
+.badge.bad { background: var(--bad-soft); color: var(--bad); }
+a.badge.bad:hover { text-decoration: none; }
+.hbars.good .fill, .start-rows.good .fill { background: var(--good); }
+.debar { margin-top: 16px; border-left: 4px solid var(--bad); }
+.debar-table td.wrap { white-space: normal; min-width: 200px; max-width: 340px; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 12px; }
+.chip.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 
 /* Badges */
 .badges { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -198,7 +216,7 @@ tbody tr:last-child td { border-bottom: none; }
 td .emp { font-weight: 600; color: var(--ink); max-width: 280px; overflow: hidden; text-overflow: ellipsis; display: block; }
 td .emp-sub { font-size: 12px; color: var(--ink-3); }
 .bar { position: relative; display: inline-block; min-width: 120px; }
-.bar i { position: absolute; right: 0; top: 50%; transform: translateY(-50%); height: 22px; border-radius: 4px; background: var(--danger-soft); z-index: 0; }
+.bar i { position: absolute; right: 0; top: 50%; transform: translateY(-50%); height: 22px; border-radius: 4px; background: var(--good-soft); z-index: 0; }
 .bar span { position: relative; z-index: 1; padding-right: 6px; }
 
 /* Watchlist filters */

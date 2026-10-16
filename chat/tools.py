@@ -29,6 +29,7 @@ DATA_NOTES = """- Applications are FY2025 DOL disclosure records (LCA for H-1B, 
 - WHD records have no tax ID, so cases are linked to employers by cleaned name plus ZIP code or state. Some links are wrong (about 3 to 4 percent in a tax-ID test). When a single case drives your answer, mention that it is a name match.
 - A case with 0 violations and $0 back wages means WHD investigated and recorded no violations.
 - red_flags are patterns in the employer's own FY2025 applications (wages at the floor, mostly entry-level wage levels, many withdrawn or denied applications, most workers placed outside the home state). They are reasons for a closer look, not evidence of a violation; say so.
+- dol_debarments are entries on DOL's published debarment lists (H-1B, H-2A, H-2B, permanent labor certification) whose name, and state when DOL gives one, match the employer. Debarment is a DOL enforcement finding. The match is by name, so say it is a name match.
 - willful_violator is the employer's own Yes/No answer on its applications, not a DOL finding. It counts only when most applications say Yes; willful_yes gives the count.
 - Money is in U.S. dollars. back_wages is the back wages WHD found owed; penalties are civil money penalties assessed."""
 
@@ -47,7 +48,8 @@ TOOLS = [
      "description": "One employer's details: address, tax ID, industry, application counts, flags, "
                     "totals of its linked WHD cases, each linked case (case_id, dates, violations, back "
                     "wages, penalties, how it was matched), its most common jobs and how its offered wages "
-                    "compare with the prevailing wage, and other rows sharing its tax ID.",
+                    "compare with the prevailing wage, other rows sharing its tax ID, and any matching entry on DOL's "
+                    "published debarment lists.",
      "input_schema": _schema({"employer_id": {"type": "integer"}}, ["employer_id"])},
     {"name": "list_applications",
      "description": "An employer's visa applications, newest decision first: case_number, status, job, "
@@ -111,6 +113,9 @@ def get_employer(con, args):
             "willful_yes")
     cases = q.cases(con, eid)
     profile = q.employer_profile(con, eid)
+    debarred = [{k: d[k] for k in ("program", "entity", "entity_type", "location", "start_date", "end_date",
+                                   "status", "violation", "applications_during", "match", "source_url")}
+                for d in q.employer_debarments(con, eid)]
     return {
         "employer": {**{k: e.get(k) for k in keep}, "sector": q.SECTORS.get(q.sector_of(e["naics"]))},
         "totals": {k: (_money(v) if k in ("back_wages", "penalties") else v)
@@ -130,6 +135,7 @@ def get_employer(con, args):
         "same_tax_id_elsewhere": q.same_tax_id(con, eid)[:10],
         "red_flags": [{k: f[k] for k in ("title", "applications", "of", "baseline", "detail")}
                       for f in q.red_flags(con, eid)],
+        "dol_debarments": debarred,
     }
 
 

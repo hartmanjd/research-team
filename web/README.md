@@ -49,6 +49,7 @@ Settings (environment variables, all optional):
 | `#/application/<case number>` | One application: headline job, workers, wages and dates, then every field of its DOL disclosure record by section |
 | `#/watchlist` | Every employer with linked WHD cases, sortable, with filters (program, state, industry, year, visa violations, applications) kept in the address |
 | `#/map` | A tile map of states colored by cases per 100 visa employers, share with a case, back wages or case count, with top-state bars and a table |
+| `#/debarments` | DOL's published debarment lists (H-1B, H-2A, H-2B, permanent labor certification), each entry with its period, status and reason, and the FY2025 visa filers that match it by name (and state when DOL gives one) |
 | `#/industries` | NAICS sectors: a size-against-rate bubble chart, bars for share with a case and back wages, and a table |
 | `#/ask` | Ask a question in plain English. Claude answers from the database with the lookups in `chat/`, shows each lookup as it runs, and links every employer, WHD case and application it cites. Follow-up questions keep the last three questions and answers |
 
@@ -71,6 +72,7 @@ that lists the MCP address, its tools, what the data means and which pages to ci
 | `GET /api/states?program=&visa_only=` | Per state: visa employers, applications, employers with a case, cases, back wages, penalties, visa violations and rates |
 | `GET /api/sectors?program=&visa_only=` | The same numbers per NAICS sector |
 | `GET /api/overview` | Headline totals and the lookup page's starting points (computed once per server start) |
+| `GET /api/debarments` | Every DOL debarment entry with its status and matching visa employers. The employer endpoint also returns the entries matching that employer, with its applications decided inside each debarment period |
 | `GET /api/meta` | States, NAICS sector names and the source files behind the database |
 | `POST /mcp` | The chat's eight lookups as a read-only MCP server (see `chat/README.md` for connecting Claude Desktop) |
 | `GET /api/ask` | Whether the Ask page can take questions (`enabled`, or the `reason` it can't) |
