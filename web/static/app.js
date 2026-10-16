@@ -60,6 +60,7 @@ async function route() {
     else if (path === "/map") { setActiveNav("map"); await mapPage(params); }
     else if (path === "/industries") { setActiveNav("industries"); await industriesPage(params); }
     else if (path === "/ask") { setActiveNav("ask"); await askPage(); }
+    else if (path === "/debarments") { setActiveNav(""); await debarmentsPage(params); }
     else { setActiveNav("search"); searchPage(params); }
   } catch (err) {
     app.innerHTML = `<div class="empty"><h2>Something went wrong</h2><p>${esc(err.message)}</p></div>`;
@@ -71,7 +72,8 @@ document.addEventListener("click", (e) => {
   if (a) {
     const { path } = parseHash();
     if (!path.startsWith("/employer") && !path.startsWith("/application")) {
-      const labels = { "/watchlist": "Watchlist", "/map": "Map", "/industries": "Industries", "/ask": "Ask" };
+      const labels = { "/watchlist": "Watchlist", "/map": "Map", "/industries": "Industries", "/ask": "Ask",
+                       "/debarments": "Debarments" };
       state.back = { href: location.hash || "#/", label: labels[path] || "Employer lookup" };
     }
   }
@@ -146,14 +148,14 @@ async function homeOverview() {
       <div class="card tile"><div class="label">Visa employers</div><div class="value">${n(t.employers)}</div><div class="sub">filed in FY2025</div></div>
       <div class="card tile"><div class="label">Applications</div><div class="value">${n(t.applications)}</div><div class="sub">H-1B and H-2B, FY2025</div></div>
       <div class="card tile"><div class="label">Employers with WHD cases</div><div class="value">${n(t.employers_with_cases)}</div><div class="sub">${pct(t.employers_with_cases / t.employers)} of employers, ${n(t.cases)} cases</div></div>
-      <div class="card tile"><div class="label">Back wages found</div><div class="value accent-num">${compactMoney(t.back_wages)}</div><div class="sub">plus ${compactMoney(t.penalties)} in penalties</div></div>
+      <div class="card tile"><div class="label">Back wages found</div><div class="value good-num">${compactMoney(t.back_wages)}</div><div class="sub">plus <span class="bad-text">${compactMoney(t.penalties)}</span> in penalties</div></div>
     </div>
     <div class="eyebrow start-h">Where to start</div>
     <div class="grid-3">
       <div class="card panel start">
         <h3>Most back wages found</h3>
         <div class="sub">Employers whose linked WHD cases found the most back wages owed to workers.</div>
-        <div class="start-rows">${o.top_back_wages.map((r) => `
+        <div class="start-rows good">${o.top_back_wages.map((r) => `
           <a class="start-row" href="#/employer/${r.employer_id}" data-employer>
             <span class="who"><span class="nm">${esc(r.employer_name)}</span><span class="wh">${esc(titleCase(r.city))}, ${esc(r.state)} · ${n(r.n_cases)} case${r.n_cases === 1 ? "" : "s"}</span></span>
             <span class="v">${compactMoney(r.back_wages)}</span>
@@ -216,6 +218,7 @@ async function employerPage(id) {
   const e = d.employer, s = d.summary;
   const flags = [
     programBadge(e.program),
+    d.debarments.length ? `<a class="badge bad" href="#emp-debar"><span class="dot"></span>On a DOL debarment list</a>` : "",
     willfulBadge(e),
     e.h1b_dependent ? '<span class="badge warn">H-1B dependent</span>' : "",
     s.cases ? `<span class="badge danger">${n(s.cases)} WHD case${s.cases === 1 ? "" : "s"}</span>` : '<span class="badge ok">No linked WHD cases</span>',
@@ -240,12 +243,13 @@ async function employerPage(id) {
       </div>
       ${related}
     </section>
+    ${debarmentPanel(d.debarments)}
     <div class="tiles">
       <div class="card tile"><div class="label">Applications</div><div class="value">${n(s.applications)}</div><div class="sub">FY2025 disclosure files</div></div>
       <div class="card tile"><div class="label">Certified</div><div class="value">${n(s.certified)}</div><div class="sub">${s.applications ? Math.round(100 * s.certified / s.applications) : 0}% of applications</div></div>
       <div class="card tile ${s.cases ? "alert" : ""}"><div class="label">Linked WHD cases</div><div class="value">${n(s.cases)}</div><div class="sub">all years, all laws</div></div>
-      <div class="card tile ${s.back_wages ? "alert" : ""}"><div class="label">Back wages found</div><div class="value">${compactMoney(s.back_wages)}</div><div class="sub">${money(s.back_wages)}</div></div>
-      <div class="card tile"><div class="label">Penalties assessed</div><div class="value">${compactMoney(s.penalties)}</div><div class="sub">civil money penalties</div></div>
+      <div class="card tile ${s.back_wages ? "good" : ""}"><div class="label">Back wages found</div><div class="value">${compactMoney(s.back_wages)}</div><div class="sub">${money(s.back_wages)}</div></div>
+      <div class="card tile ${s.penalties ? "bad" : ""}"><div class="label">Penalties assessed</div><div class="value">${compactMoney(s.penalties)}</div><div class="sub">civil money penalties</div></div>
     </div>
 
     ${d.case_years.length ? `<div class="card panel" style="margin-top:16px"><h3>Linked cases by year</h3>
@@ -292,7 +296,7 @@ function caseCard(v) {
           ${v.h1b_violtn_cnt ? `<span class="badge h1b">${n(v.h1b_violtn_cnt)} H-1B</span>` : ""}
           ${v.h2b_violtn_cnt ? `<span class="badge h2b">${n(v.h2b_violtn_cnt)} H-2B</span>` : ""}</div>
       </div>
-      <div class="money ${bw ? "" : "zero"}">${bw ? money(bw) : "$0"}<div class="meta">back wages</div></div>
+      <div class="money ${bw ? "good-text" : "zero"}">${bw ? money(bw) : "$0"}<div class="meta">back wages</div></div>
       ${icon.chev}
     </summary>
     <div class="case-body">
@@ -300,7 +304,7 @@ function caseCard(v) {
         <dt>WHD legal name</dt><dd>${esc(v.legal_name || "–")}</dd>
         <dt>WHD trade name</dt><dd>${esc(v.trade_nm || "–")}</dd>
         <dt>WHD address</dt><dd>${esc(v.street_addr_1_txt)}, ${esc(v.cty_nm)}, ${esc(v.st_cd)} ${esc(v.zip_cd)}</dd>
-        <dt>Penalties assessed</dt><dd>${money(v.cmp_assd)}</dd>
+        <dt>Penalties assessed</dt><dd class="${v.cmp_assd ? "bad-text" : ""}">${money(v.cmp_assd)}</dd>
       </dl>
       <div class="table-wrap"><table class="mini">
         <thead><tr><th>Law</th><th class="num">Violations</th><th class="num">Back wages</th><th class="num">Workers</th></tr></thead>
@@ -549,8 +553,8 @@ async function watchlistPage(params) {
   document.getElementById("wl-tiles").innerHTML = `
     <div class="card tile"><div class="label">Employers</div><div class="value">${n(wl.rows.length)}</div></div>
     <div class="card tile"><div class="label">Linked WHD cases</div><div class="value">${n(t.cases)}</div><div class="sub">each case counted once</div></div>
-    <div class="card tile alert"><div class="label">Back wages found</div><div class="value">${compactMoney(t.back_wages)}</div><div class="sub">${money(t.back_wages)}</div></div>
-    <div class="card tile"><div class="label">Penalties assessed</div><div class="value">${compactMoney(t.penalties)}</div><div class="sub">${money(t.penalties)}</div></div>`;
+    <div class="card tile good"><div class="label">Back wages found</div><div class="value">${compactMoney(t.back_wages)}</div><div class="sub">${money(t.back_wages)}</div></div>
+    <div class="card tile bad"><div class="label">Penalties assessed</div><div class="value">${compactMoney(t.penalties)}</div><div class="sub">${money(t.penalties)}</div></div>`;
   renderWatchlistTable(go);
 }
 
@@ -578,7 +582,7 @@ function renderWatchlistTable(go) {
         <td class="num">${r.visa_violations ? `<b>${n(r.visa_violations)}</b>` : '<span class="muted">0</span>'}</td>
         <td class="num">${n(r.violations)}</td>
         <td class="num">${n(r.workers)}</td>
-        <td class="num">${money(r.penalties)}</td>
+        <td class="num ${r.penalties ? "bad-text" : ""}">${money(r.penalties)}</td>
         <td class="num"><span class="badge ${r.zip_share === 1 ? "ok" : r.zip_share === 0 ? "warn" : ""}">${r.zip_links} of ${r.n_cases}</span></td>
         <td class="num">${n(r.n_applications)}</td>
         <td class="mono small">${esc(r.latest_case || "–")}</td>
@@ -761,7 +765,7 @@ async function mapPage(params) {
     <div class="tiles">
       <div class="card tile"><div class="label">Visa employers</div><div class="value">${n(total.e)}</div><div class="sub">${n(total.x)} with a linked case</div></div>
       <div class="card tile"><div class="label">Cases per 100 employers</div><div class="value">${total.e ? (100 * total.c / total.e).toFixed(1) : "0"}</div><div class="sub">national rate</div></div>
-      <div class="card tile alert"><div class="label">Back wages found</div><div class="value">${compactMoney(total.w)}</div><div class="sub">${money(total.w)}</div></div>
+      <div class="card tile good"><div class="label">Back wages found</div><div class="value">${compactMoney(total.w)}</div><div class="sub">${money(total.w)}</div></div>
       <div class="card tile"><div class="label">Highest state</div><div class="value">${ranked[0] ? esc(ranked[0].state) : "–"}</div><div class="sub">${ranked[0] ? esc(M.label.toLowerCase()) + ": " + M.fmt(ranked[0][metric]) : ""}</div></div>
     </div>
     <div class="grid-2">
@@ -792,7 +796,7 @@ async function mapPage(params) {
         <tbody>${[...data].sort((a, b) => b.cases - a.cases).map((r) => `<tr>
           <td><a href="${g.toWatchlist({ state: r.state })}">${esc(STATE_NAMES[r.state] || r.state)}</a></td><td class="num">${n(r.employers)}</td>
           <td class="num">${n(r.employers_with_cases)}</td><td class="num">${pct(r.share_with_cases)}</td><td class="num">${n(r.cases)}</td>
-          <td class="num">${r.cases_per_100.toFixed(1)}</td><td class="num">${money(r.back_wages)}</td><td class="num">${money(r.penalties)}</td></tr>`).join("")}</tbody>
+          <td class="num">${r.cases_per_100.toFixed(1)}</td><td class="num good-text">${money(r.back_wages)}</td><td class="num bad-text">${money(r.penalties)}</td></tr>`).join("")}</tbody>
       </table></div></div>
     </details>
     <p class="note">A case counts toward a state when it is linked to a visa employer there. WHD cases have no tax ID, so links are by name and location; see each employer's page for how each case was linked.</p>`;
@@ -900,7 +904,7 @@ async function industriesPage(params) {
       <div class="card panel">
         <h3>Back wages found</h3>
         <div class="sub">In linked WHD cases, each case counted once per industry</div>
-        <div class="hbars">${wageRank.map((r) => hbar(r, r.back_wages, maxWage, compactMoney(r.back_wages))).join("")}</div>
+        <div class="hbars good">${wageRank.map((r) => hbar(r, r.back_wages, maxWage, compactMoney(r.back_wages))).join("")}</div>
       </div>
     </div>
     <details class="sources"><summary>Show all industries as a table</summary>
@@ -908,7 +912,7 @@ async function industriesPage(params) {
         <thead><tr><th>Industry</th><th>NAICS</th><th class="num">Visa employers</th><th class="num">Applications</th><th class="num">With a case</th><th class="num">Share</th><th class="num">Cases</th><th class="num">Back wages</th><th class="num">Penalties</th></tr></thead>
         <tbody>${data.map((r) => `<tr><td><a href="${g.toWatchlist({ sector: r.sector })}">${esc(r.name)}</a></td><td class="mono">${esc(r.sector)}</td>
           <td class="num">${n(r.employers)}</td><td class="num">${n(r.applications)}</td><td class="num">${n(r.employers_with_cases)}</td>
-          <td class="num">${pct(r.share_with_cases)}</td><td class="num">${n(r.cases)}</td><td class="num">${money(r.back_wages)}</td><td class="num">${money(r.penalties)}</td></tr>`).join("")}</tbody>
+          <td class="num">${pct(r.share_with_cases)}</td><td class="num">${n(r.cases)}</td><td class="num good-text">${money(r.back_wages)}</td><td class="num bad-text">${money(r.penalties)}</td></tr>`).join("")}</tbody>
       </table></div></div>
     </details>
     <p class="note">Industry comes from the NAICS code the employer gave on its visa applications. Employers with a missing or malformed code are left out.
@@ -1114,3 +1118,63 @@ async function askPage() {
 }
 
 route();
+
+// ---------- DOL debarments ----------
+const debarStatus = (d) => d.status === "active" ? '<span class="badge bad">Active</span>'
+  : d.status === "ended" ? '<span class="badge">Ended</span>' : '<span class="badge warn">Starts later</span>';
+const debarPeriod = (d) => `${day(d.start_date)} to ${d.end_date === "permanent" ? "permanent" : day(d.end_date)}`;
+
+function debarmentPanel(list) {
+  if (!list.length) return "";
+  return `<section class="card panel debar" id="emp-debar">
+    <h3>On a DOL debarment list</h3>
+    <div class="sub">Debarment is a Department of Labor enforcement finding: the entity may not use the program
+      for the period shown. Matched by name${list.some((d) => d.state) ? " and state" : ""}, so confirm it is the same company.</div>
+    <div class="table-wrap"><table class="mini debar-table">
+      <thead><tr><th>DOL entry</th><th>Program</th><th>Period</th><th>Status</th><th>Reason</th><th class="num" title="This employer's FY2025 applications decided inside the debarment period">Apps in period</th></tr></thead>
+      <tbody>${list.map((d) => `<tr>
+        <td class="wrap">${esc(d.entity)}${d.location ? `<div class="muted small">${esc(d.location)}</div>` : ""}<div class="muted small">${esc(d.match)}</div></td>
+        <td>${esc(d.program)}</td><td class="nowrap">${debarPeriod(d)}</td><td>${debarStatus(d)}</td>
+        <td class="wrap">${esc(d.violation)}${d.cfr_citation ? `<div class="muted small">${esc(d.cfr_citation)}</div>` : ""}</td>
+        <td class="num">${n(d.applications_during)}</td></tr>`).join("")}</tbody>
+    </table></div>
+    <div class="note">Source: <a href="${esc(list[0].source_url)}" target="_blank" rel="noopener">DOL debarment list</a>.
+      <a href="#/debarments">See every DOL debarment</a>.</div>
+  </section>`;
+}
+
+async function debarmentsPage(params) {
+  loading("Loading DOL debarment lists…");
+  const all = await api("/debarments");
+  const program = params.get("program") || "";
+  const rows = all.filter((d) => !program || d.program === program);
+  const filing = all.filter((d) => d.employers.length);
+  const active = all.filter((d) => d.status === "active").length;
+  const progs = ["H-1B", "H-2A", "H-2B", "PERM"];
+  app.innerHTML = `
+    <div class="eyebrow">DOL enforcement</div>
+    <h1 class="page-title">Debarments</h1>
+    <p class="lede">Employers, agents and labor contractors that the Department of Labor has barred from a visa or
+      labor certification program, from DOL's published lists. Entries are matched to the FY2025 visa filers by
+      cleaned name, and by state when DOL gives one.</p>
+    <div class="tiles" style="margin-top:20px">
+      <div class="card tile"><div class="label">DOL debarment entries</div><div class="value">${n(all.length)}</div><div class="sub">${progs.map((p) => `${p} ${n(all.filter((d) => d.program === p).length)}`).join(" · ")}</div></div>
+      <div class="card tile bad"><div class="label">Active now</div><div class="value">${n(active)}</div><div class="sub">period has not ended</div></div>
+      <div class="card tile ${filing.length ? "bad" : ""}"><div class="label">Match an FY2025 visa filer</div><div class="value">${n(filing.length)}</div><div class="sub">same cleaned name${" "}(and state when given)</div></div>
+    </div>
+    <div class="chip-row">
+      ${["", ...progs].map((p) => `<a class="chip ${p === program ? "active" : ""}" href="#/debarments${p ? "?program=" + p : ""}">${p || "All programs"}</a>`).join("")}
+    </div>
+    <div class="card"><div class="table-wrap" style="max-height:70vh"><table class="debar-table">
+      <thead><tr><th>DOL entry</th><th>Type</th><th>Program</th><th>Period</th><th>Status</th><th>Reason</th><th>FY2025 visa filer</th></tr></thead>
+      <tbody>${rows.sort((a, b) => b.employers.length - a.employers.length || (b.start_date || "").localeCompare(a.start_date || "")).map((d) => `<tr>
+        <td class="wrap">${esc(d.entity)}${d.location ? `<div class="muted small">${esc(d.location)}</div>` : ""}</td>
+        <td>${esc(d.entity_type)}</td><td>${esc(d.program)}</td><td class="nowrap">${debarPeriod(d)}</td><td>${debarStatus(d)}</td>
+        <td class="wrap">${esc(d.violation)}</td>
+        <td class="wrap">${d.employers.map((e) => `<a data-employer href="#/employer/${e.employer_id}">${esc(e.employer_name)}</a>
+          <div class="muted small">${esc(e.program)} · ${esc(titleCase(e.city))}, ${esc(e.state)} · ${n(e.n_applications)} apps</div>`).join("") || '<span class="muted">–</span>'}</td></tr>`).join("")}</tbody>
+    </table></div></div>
+    <p class="note">Sources: <a href="https://www.dol.gov/agencies/eta/foreign-labor/program-debarments" target="_blank" rel="noopener">OFLC program debarments</a>
+      (PERM, H-2A, H-2B) and <a href="https://www.dol.gov/agencies/whd/immigration/h1b/debarment" target="_blank" rel="noopener">WHD H-1B debarments</a>.
+      DOL's H-1B list gives no addresses, so H-1B entries match on name alone.</p>`;
+}

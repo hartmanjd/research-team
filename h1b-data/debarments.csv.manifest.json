@@ -1,0 +1,45 @@
+{
+  "file": "debarments.csv",
+  "sha256": "c95f683a46a144e692414b16c480342755d6583d1033b424019c5d5c3d9f2e7b",
+  "bytes": 27201,
+  "rows": 121,
+  "created_utc": "2026-10-16T04:58:47+00:00",
+  "script": "parse_debarments.py",
+  "script_sha256": "0cfb8b41cba9f0c94236ff15cc1662e0c19d30e7a2edbae5a04792962523fa67",
+  "python": "3.13.16",
+  "inputs": [
+    {
+      "file": "Debarment_List.pdf",
+      "sha256": "73977ac80481f34b6b795a532fb5ad26049e18648de19c01ea6a6641c3f59bd0",
+      "bytes": 208668,
+      "rows": null
+    },
+    {
+      "file": "debarment.html",
+      "sha256": "29e3e6425c12868db2cc8efbbb1cf356227f392603db4dc6f1f357db68e7e004",
+      "bytes": 92141,
+      "rows": null
+    },
+    {
+      "file": "H1BDebarmentList.xls",
+      "sha256": "a33bfd51f3f528567008fb5d9bef04ea412f302e31bcf6a45af4064ec9faaab2",
+      "bytes": 33792,
+      "rows": null
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://www.dol.gov/sites/dolgov/files/ETA/oflc/pdfs/Debarment_List.pdf",
+      "note": "OFLC Program Debarments (PERM, H-2A, H-2B)"
+    },
+    {
+      "url": "https://www.dol.gov/agencies/whd/immigration/h1b/debarment",
+      "note": "WHD H-1B debarred/disqualified employers, current"
+    },
+    {
+      "url": "https://www.dol.gov/sites/dolgov/files/WHD/legacy/files/H1BDebarmentList.xls",
+      "note": "WHD H-1B debarment workbook, older entries"
+    }
+  ],
+  "params": {}
+}

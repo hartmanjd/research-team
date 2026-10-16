@@ -19,6 +19,8 @@ The employer and application tables (`filers_*`), the database (`research.db`) a
 | scripts/match_whd.py | Match rates of WHD H-1B/H-2B violation cases to filers |
 | scripts/build_db.py | Builds `research.db` (SQLite) from the tables above; see Database |
 | research.db (not in git) | The database |
+| debarments.csv | DOL's published debarment lists in one table (H-1B, H-2A, H-2B and permanent labor certification): entity, type, location, period, reason, CFR citation, source URL and file. Kept in git because it is small and is read by the website directly |
+| scripts/parse_debarments.py | Builds debarments.csv from the three DOL files; see Debarments |
 | whd_match_rates.csv | Output of match_whd.py (run 2026-10-15 on 370,964 WHD cases) |
 | tests/ | Tests for manifests, the employer build and the WHD download (no network needed) |
 
@@ -51,6 +53,24 @@ numbers; everything else (ZIPs, phone numbers, codes) is text. `n_certified` cou
 Withdrawn" and H-2B "Determination Issued - Certification" or "Partial Certification".
 
 WHD cases have no tax ID, so `matches` links them by cleaned name + ZIP, or failing that cleaned name + state, using the WHD trade or legal name against the employer's name or DBA. `est_false_match_rate` is that rule's false-match rate on the tax-ID benchmark (`name_match_benchmark.csv`).
+
+## Debarments
+
+`debarments.csv` combines three DOL sources:
+
+- OFLC's Program Debarments PDF (PERM, H-2A, H-2B): https://www.dol.gov/agencies/eta/foreign-labor/program-debarments
+- WHD's current H-1B list, the table on https://www.dol.gov/agencies/whd/immigration/h1b/debarment
+- WHD's older H-1B workbook, `H1BDebarmentList.xls`, linked from that page
+
+dol.gov refuses scripted downloads, so save the three files with a browser: open the PDF and use Save, save the
+H-1B page with **Save Page As > Webpage, HTML only**, and click the workbook's Download link. Then run:
+
+    pip install pdfplumber xlrd
+    python3 h1b-data/scripts/parse_debarments.py Debarment_List.pdf debarment.html H1BDebarmentList.xls
+
+The website matches each entry to employers by cleaned name (the whole name, or any part around "d/b/a" or
+"aka") and by state when DOL gives a location. DOL's H-1B list has no addresses, so those entries match on
+name alone.
 
 ## Rebuilding
 
