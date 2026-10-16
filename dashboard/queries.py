@@ -460,6 +460,22 @@ def watchlist(con, program=None, since_year=None, visa_violations_only=False, mi
         ORDER BY back_wages DESC, n_cases DESC, e.employer_id""", *args)
 
 
+def watchlist_case_ids(con, **filters):
+    """The WHD case IDs behind each watchlist row, as {employer_id: [case_id, ...]}, newest first."""
+    where, args = _watchlist_filter(filters.get("program"), filters.get("since_year"),
+                                    filters.get("visa_violations_only", False),
+                                    filters.get("min_applications", 1), filters.get("state"),
+                                    filters.get("sector"))
+    out = {}
+    for r in rows(con, f"""
+            SELECT m.employer_id, v.case_id
+            FROM matches m JOIN employers e USING (employer_id) JOIN violation_cases v USING (case_id)
+            WHERE {where}
+            ORDER BY m.employer_id, v.findings_end_date DESC, v.case_id DESC""", *args):
+        out.setdefault(r["employer_id"], []).append(r["case_id"])
+    return out
+
+
 def watchlist_totals(con, **filters):
     """Totals for the watchlist, counting each WHD case once.
 
