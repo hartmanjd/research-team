@@ -87,6 +87,10 @@ button, input, select { font: inherit; color: inherit; }
 
 main.container { padding-top: 36px; padding-bottom: 48px; min-height: 70vh; }
 .footer { color: var(--ink-3); font-size: 13px; padding-bottom: 40px; }
+.ai-use { margin-top: 10px; max-width: 720px; }
+.ai-use summary { cursor: pointer; color: var(--ink-2); font-weight: 500; }
+.ai-use code { font-family: var(--mono); font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+.ai-use ol { padding-left: 20px; margin: 6px 0; }
 
 /* Type */
 .eyebrow { text-transform: uppercase; letter-spacing: .08em; font-size: 12px; font-weight: 600; color: var(--ink-3); }

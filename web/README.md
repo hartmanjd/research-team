@@ -50,6 +50,10 @@ Settings (environment variables, all optional):
 On the Map and Industries pages, hovering a state or industry shows its numbers, and clicking it opens
 the Watchlist filtered to it.
 
+The footer on every page has a "Use this data with AI (MCP)" section with the MCP server's address and the
+steps for adding it to Claude. `static/llms.txt`, served at `/llms.txt`, is a plain-text guide for AI tools
+that lists the MCP address, its tools, what the data means and which pages to cite.
+
 ## API
 
 | Endpoint | Returns |

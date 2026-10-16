@@ -31,6 +31,19 @@
   <footer class="footer container">
     Data: DOL OFLC H-1B (LCA) and H-2B disclosure files, FY2025, and DOL Wage and Hour enforcement cases.
     Every number links back to its DOL record.
+    <details class="ai-use">
+      <summary>Use this data with AI (MCP)</summary>
+      <p>
+        The same lookups are open to AI assistants as a read-only MCP server at
+        <code>https://visa-employer-watch.onrender.com/mcp</code>. No account or key is needed.
+      </p>
+      <ol>
+        <li>In Claude Desktop or claude.ai, open <b>Settings &gt; Connectors</b> and choose <b>Add custom connector</b>.</li>
+        <li>Name it <i>Visa Employer Watch</i> and paste the address above.</li>
+        <li>Ask a question, such as &ldquo;Which H-2B employers in Texas have the most back wages?&rdquo;</li>
+      </ol>
+      <p>Other MCP apps and agents use the same address. A plain-text guide for AI tools is at <a href="llms.txt">llms.txt</a>.</p>
+    </details>
   </footer>
   <div id="tooltip" class="tooltip" role="status"></div>
   <script src="app.js"></script>
