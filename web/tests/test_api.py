@@ -110,6 +110,16 @@ class ApiTests(unittest.TestCase):
         self.assertIn("Visa Employer Watch", page.text)
         self.assertEqual(self.client.get("/app.js").status_code, 200)
 
+    def test_mcp_address_is_published(self):
+        mcp_url = "https://visa-employer-watch.onrender.com/mcp"
+        self.assertIn(mcp_url, self.client.get("/").text)
+        guide = self.client.get("/llms.txt")
+        self.assertEqual(guide.status_code, 200)
+        self.assertTrue(guide.headers["content-type"].startswith("text/plain"))
+        self.assertIn(mcp_url, guide.text)
+        for tool in self.client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).json()["result"]["tools"]:
+            self.assertIn(f"`{tool['name']}`", guide.text)
+
 
 if __name__ == "__main__":
     unittest.main()
