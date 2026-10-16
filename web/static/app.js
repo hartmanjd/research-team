@@ -52,8 +52,10 @@ function setActiveNav(name) {
 async function route() {
   const { path, params } = parseHash();
   const m = path.match(/^\/employer\/(\d+)$/);
+  const ma = path.match(/^\/application\/([A-Za-z0-9-]+)$/);
   try {
-    if (m) { setActiveNav((state.back.href.match(/^#\/(watchlist|map|industries)/) || [, "search"])[1]); await employerPage(+m[1]); }
+    if (ma) { setActiveNav((state.back.href.match(/^#\/(watchlist|map|industries)/) || [, "search"])[1]); await applicationPage(ma[1]); }
+    else if (m) { setActiveNav((state.back.href.match(/^#\/(watchlist|map|industries)/) || [, "search"])[1]); await employerPage(+m[1]); }
     else if (path === "/watchlist") { setActiveNav("watchlist"); await watchlistPage(params); }
     else if (path === "/map") { setActiveNav("map"); await mapPage(params); }
     else if (path === "/industries") { setActiveNav("industries"); await industriesPage(params); }
@@ -67,7 +69,7 @@ document.addEventListener("click", (e) => {
   const a = e.target.closest("a[data-employer]");
   if (a) {
     const { path } = parseHash();
-    if (!path.startsWith("/employer")) {
+    if (!path.startsWith("/employer") && !path.startsWith("/application")) {
       const labels = { "/watchlist": "Watchlist", "/map": "Map", "/industries": "Industries" };
       state.back = { href: location.hash || "#/", label: labels[path] || "Employer lookup" };
     }
@@ -82,13 +84,14 @@ function searchPage(params) {
     <section class="hero">
       <div class="eyebrow">H-1B and H-2B employers · Wage and Hour enforcement</div>
       <h1 class="page-title">Look up an employer</h1>
-      <p class="lede">Search 80,950 employers that filed H-1B or H-2B applications in FY2025, and see the
-        Department of Labor Wage and Hour cases linked to them. Every figure traces back to its DOL record.</p>
+      <p class="lede">Search 80,950 employers that filed H-1B or H-2B applications in FY2025 by name, trade name or tax ID,
+        or open one of their 612,374 applications by its DOL case number. See the jobs, worksites, wages and representatives
+        on their filings and the Department of Labor Wage and Hour cases linked to them. Every figure traces back to its DOL record.</p>
       <div class="searchbox">${icon.search}
-        <input id="q" type="search" placeholder="Company name or trade name, e.g. Infosys" autocomplete="off" value="${esc(q)}">
+        <input id="q" type="search" placeholder="Company name, trade name, tax ID or DOL case number" autocomplete="off" value="${esc(q)}">
       </div>
       <div class="hint-list" id="hints">
-        ${["Infosys", "Cafua Management", "Cognizant", "Disney"].map((h) => `<button class="tip-hint">${h}</button>`).join("")}
+        ${["Infosys", "Cafua Management", "Cognizant", "06-1506026", "I-200-25273-349981"].map((h) => `<button class="hint">${h}</button>`).join("")}
       </div>
     </section>
     <div class="results" id="results"></div>`;
@@ -99,11 +102,13 @@ function searchPage(params) {
     if (!text.trim()) { box.innerHTML = ""; return; }
     const hits = await api("/search", { q: text });
     if (input.value !== text) return; // a newer search is on its way
-    box.innerHTML = hits.length ? `<div class="muted small">${hits.length === 50 ? "First 50" : hits.length} employers</div>` + hits.map((h) => `
-      <a class="card result" href="#/employer/${h.employer_id}" data-employer>
+    const caseHit = hits.length && hits[0].case_number;
+    box.innerHTML = hits.length ? `<div class="muted small">${caseHit ? `Application ${esc(hits[0].case_number)} was filed by` : `${hits.length === 50 ? "First 50" : hits.length} employers`}</div>` + hits.map((h) => `
+      <a class="card result" href="${h.case_number ? "#/application/" + esc(h.case_number) : "#/employer/" + h.employer_id}" data-employer>
         <div>
           <div class="name">${esc(h.employer_name)}${h.dba ? ` <span class="muted">· DBA ${esc(h.dba)}</span>` : ""}</div>
           <div class="where">${esc(titleCase(h.city))}, ${esc(h.state)} ${programBadge(h.program)}
+            ${h.case_number ? `<span class="badge">Open application ${esc(h.case_number)}</span>` : ""}
             ${h.willful_violator ? '<span class="badge danger">Willful violator</span>' : ""}</div>
         </div>
         <div class="stat"><b>${n(h.n_applications)}</b>applications</div>
@@ -142,7 +147,8 @@ async function employerPage(id) {
       <h1>${esc(e.employer_name)}</h1>
       ${e.dba ? `<div class="muted">Also does business as ${esc(e.dba)}</div>` : ""}
       <div class="facts">
-        <span><b>Address</b>${esc(e.address)}, ${esc(titleCase(e.city))}, ${esc(e.state)} ${esc(e.zip5)}</span>
+        <span><b>Address</b>${esc(e.address)}${e.address2 ? ", " + esc(e.address2) : ""}, ${esc(titleCase(e.city))}, ${esc(e.state)} ${esc(e.zip5)}</span>
+        ${e.phone ? `<span><b>Phone</b><span class="mono">${esc(e.phone)}${e.phone_ext ? " ext. " + esc(e.phone_ext) : ""}</span></span>` : ""}
         <span><b>Tax ID</b><span class="mono">${esc(e.fein || "not given")}</span></span>
         <span><b>NAICS</b><span class="mono">${esc(e.naics || "–")}</span>${e.sector ? ` · <a href="#/watchlist?sector=${esc(e.sector)}">${esc(e.sector_name)}</a>` : ""}</span>
       </div>
@@ -159,6 +165,8 @@ async function employerPage(id) {
     ${d.case_years.length ? `<div class="card panel" style="margin-top:16px"><h3>Linked cases by year</h3>
       <div class="sub">Year the WHD findings period ended. Hover a bar for its back wages.</div>${yearColumns(d.case_years)}</div>` : ""}
 
+    ${profilePanels(d.profile, e.program)}
+
     <h2 class="section">Wage and Hour cases <span class="count">${n(d.cases.length)}</span></h2>
     ${d.cases.length ? `
       <div class="callout">${icon.info}<div>WHD records carry no tax ID, so each case is linked by name and location.
@@ -168,7 +176,8 @@ async function employerPage(id) {
 
     <h2 class="section">Visa applications <span class="count" id="app-count"></span></h2>
     <div class="card" id="apps"><div class="loading"><div class="spinner"></div></div></div>
-    <p class="note">Each case number is DOL's own. The source column links to the DOL disclosure file the row came from.</p>
+    <p class="note">Each case number is DOL's own; click one to see every field of the application. The source column links to the
+      DOL disclosure file the row came from. Wages are shown in the unit the employer gave (per year, hour, ...).</p>
 
     <details class="sources"><summary>Where this page's data comes from</summary>
       <div class="card" style="padding:16px 18px;margin-top:10px">
@@ -236,17 +245,141 @@ async function loadApplications(id, page) {
   };
   box.innerHTML = d.total ? `
     <div class="table-wrap"><table>
-      <thead><tr><th>Case number</th><th>Status</th><th>Visa</th><th>Tax ID</th><th>DOL file</th></tr></thead>
+      <thead><tr><th>Case number</th><th>Status</th><th>Decided</th><th>Job</th><th>Worksite</th><th class="num">Workers</th>
+        <th class="num">Wage offered</th><th class="num">Prevailing wage</th><th>Represented by</th><th>DOL file</th></tr></thead>
       <tbody>${d.rows.map((a) => `<tr>
-        <td class="mono">${esc(a.case_number)}</td><td>${statusBadge(a.case_status)}</td><td>${esc(a.visa_class)}</td>
-        <td class="mono">${esc(a.fein)}</td>
-        <td>${a.dol_file_url ? `<a href="${esc(a.dol_file_url)}" target="_blank" rel="noopener">${esc(a.source_file)}</a>` : esc(a.source_file)}</td>
+        <td class="mono nowrap"><a href="#/application/${esc(a.case_number)}">${esc(a.case_number)}</a></td><td>${statusBadge(a.case_status)}</td>
+        <td class="nowrap">${day(a.decision_date)}</td>
+        <td class="job-cell"><div>${esc(a.job_title || "–")}</div><div class="muted small">${esc(a.soc_title || "")}</div></td>
+        <td>${esc(titleCase(a.worksite_city || ""))}${a.worksite_state ? ", " + esc(a.worksite_state) : ""}</td>
+        <td class="num">${n(a.workers)}</td>
+        <td class="num nowrap">${wage(a.wage_from, a.wage_unit, a.wage_to)}</td>
+        <td class="num nowrap">${a.prevailing_wage != null ? wage(a.prevailing_wage, a.pw_unit_of_pay) + (a.pw_wage_level ? ` <span class="muted small">L${esc(a.pw_wage_level)}</span>` : "") : "–"}</td>
+        <td class="small">${esc(a.lawfirm || "")}</td>
+        <td class="small">${a.dol_file_url ? `<a href="${esc(a.dol_file_url)}" target="_blank" rel="noopener">${esc(a.source_file)}</a>` : esc(a.source_file)}</td>
       </tr>`).join("")}</tbody></table></div>
     ${pages > 1 ? `<div class="pager"><span>Page ${page} of ${n(pages)}</span><span class="btns">
       <button class="btn" data-page="${page - 1}" ${page <= 1 ? "disabled" : ""}>Previous</button>
       <button class="btn" data-page="${page + 1}" ${page >= pages ? "disabled" : ""}>Next</button></span></div>` : ""}`
     : `<div class="empty">No applications.</div>`;
   box.querySelectorAll("[data-page]").forEach((b) => b.addEventListener("click", () => loadApplications(id, +b.dataset.page)));
+}
+
+const UNIT_SHORT = { Year: "yr", Hour: "hr", Month: "mo", Week: "wk", "Bi-Weekly": "2 wks", "Piece Rate": "piece" };
+function wage(from, unit, to) {
+  if (from == null || from === "") return "–";
+  const f = (x) => "$" + Number(x).toLocaleString("en-US", { maximumFractionDigits: Number(x) < 1000 ? 2 : 0 });
+  const range = to != null && to !== "" && Number(to) > Number(from) ? `${f(from)}–${f(to)}` : f(from);
+  return `${range}<span class="muted small">/${esc(UNIT_SHORT[unit] || unit || "?")}</span>`;
+}
+
+// Ranked bars for the employer profile panels (plain rows, no links).
+function rankBars(items, label = (r) => r.name, value = (r) => r.applications, sub = null) {
+  const max = Math.max(...items.map(value), 1);
+  return `<div class="hbars">${items.map((r) => `
+    <div class="hbar static" title="${esc(label(r))}">
+      <span class="name">${esc(label(r))}${sub && sub(r) ? `<span class="hbar-sub">${esc(sub(r))}</span>` : ""}</span>
+      <span class="track"><span class="fill" style="width:${Math.max(1.5, 100 * value(r) / max)}%"></span></span>
+      <span class="v">${n(value(r))}</span></div>`).join("")}</div>`;
+}
+
+function profilePanels(p, program) {
+  if (!p || !(p.jobs.length || p.worksites.length || p.lawfirms.length)) return "";
+  const wageTotal = p.wage_bands.reduce((a, b) => a + b.applications, 0);
+  const maxBand = Math.max(...p.wage_bands.map((b) => b.applications), 1);
+  const wagePanel = wageTotal ? `
+    <div class="card panel">
+      <h3>Offered wage against the prevailing wage</h3>
+      <div class="sub">H-1B applications by how far the lowest offered wage is above the prevailing wage for the job and area
+        (both turned into yearly amounts). Offers at or just above the prevailing wage are worth a closer look.</div>
+      <div class="bands">${p.wage_bands.map((b, i) => `
+        <div class="band ${i === 0 && b.applications ? "below" : ""}" data-tip="${i}">
+          <div class="band-bar"><span style="height:${100 * b.applications / maxBand}%"></span></div>
+          <div class="band-v">${n(b.applications)}</div><div class="band-l">${esc(b.band)}</div></div>`).join("")}</div>
+      ${p.wage_levels.length ? `<div class="levels"><span class="muted small">Prevailing wage level</span>
+        ${p.wage_levels.map((l) => `<span class="chip">Level ${esc(l.level)} <b>${n(l.applications)}</b></span>`).join("")}</div>` : ""}
+    </div>` : "";
+  const repPanel = p.lawfirms.length || p.attorneys.length ? `
+    <div class="card panel">
+      <h3>Who files their applications</h3>
+      <div class="sub">Law firms or agents, and the attorney or agent named on the form, by number of applications.</div>
+      ${p.lawfirms.length ? `<div class="mini-h">Law firm or agent business</div>${rankBars(p.lawfirms.slice(0, 6))}` : ""}
+      ${p.attorneys.length ? `<div class="mini-h">Attorney or agent</div>${rankBars(p.attorneys.slice(0, 6))}` : ""}
+    </div>` : "";
+  return `
+    <h2 class="section">What their applications ask for</h2>
+    <div class="grid-2 even">
+      ${p.jobs.length ? `<div class="card panel">
+        <h3>Jobs</h3>
+        <div class="sub">Occupations (SOC) by number of applications, with the job titles the employer used.</div>
+        ${rankBars(p.jobs, (r) => r.soc_title, (r) => r.applications,
+          (r) => r.job_titles.join(" · ") + (r.more_titles ? ` · +${r.more_titles} more` : ""))}
+      </div>` : ""}
+      ${p.worksites.length ? `<div class="card panel">
+        <h3>Worksites</h3>
+        <div class="sub">Where the workers would work, by number of applications${program === "H-2B" ? " (main worksite on the form)" : ""}.</div>
+        ${rankBars(p.worksites, (r) => titleCase(r.name.split(", ")[0]) + ", " + (r.name.split(", ")[1] || ""))}
+        ${p.worksite_states.length > 1 ? `<div class="levels"><span class="muted small">${n(p.worksite_states.length)} states</span>
+          ${p.worksite_states.slice(0, 12).map((r) => `<span class="chip">${esc(r.name)} <b>${n(r.applications)}</b></span>`).join("")}</div>` : ""}
+      </div>` : ""}
+      ${wagePanel}
+      ${repPanel}
+    </div>`;
+}
+// Wage-band tooltips are bound after the employer page renders.
+new MutationObserver(() => {
+  document.querySelectorAll(".bands:not([data-bound])").forEach((el) => {
+    el.dataset.bound = "1";
+    const labels = [...el.querySelectorAll(".band-l")].map((x) => x.textContent);
+    const vals = [...el.querySelectorAll(".band-v")].map((x) => x.textContent);
+    bindTips(el, (i) => `<b>${esc(labels[i])}</b>` + tipRows([["H-1B applications", vals[i]]]));
+  });
+}).observe(app, { childList: true, subtree: true });
+
+// ---------- application ----------
+async function applicationPage(caseNumber) {
+  loading("Loading application…");
+  const d = await api("/applications/" + encodeURIComponent(caseNumber));
+  const a = d.application, h = d.highlights;
+  const status = a.case_status || "";
+  const cls = /^certified$|certification$/i.test(status) ? "ok" : /withdrawn/i.test(status) ? "" : /denied|rejected/i.test(status) ? "danger" : "warn";
+  const vs = h.wage_vs_prevailing;
+  const fmt = (f) => {
+    const v = f.value;
+    if (/email/.test(f.field) && /@/.test(v)) return `<a href="mailto:${esc(v)}">${esc(v)}</a>`;
+    if (/website/.test(f.field) && /^https?:/i.test(v)) return `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>`;
+    if (typeof v === "number") return /wage|rate|prevailing/.test(f.field) ? "$" + v.toLocaleString("en-US") : n(v);
+    return esc(v);
+  };
+  app.innerHTML = `
+    <a class="back" href="#/employer/${a.employer_id}" data-employer>${icon.back} ${esc(a.employer_row_name)}</a>
+    <section class="card emp-head">
+      <div class="badges">${programBadge(a.program)}<span class="badge ${cls}">${esc(status)}</span></div>
+      <h1>${esc(h.job_title || "Application")}</h1>
+      <div class="muted">${esc(h.soc_title || "")}</div>
+      <div class="facts">
+        <span><b>Case number</b><span class="mono">${esc(a.case_number)}</span></span>
+        <span><b>Employer</b><a href="#/employer/${a.employer_id}" data-employer>${esc(a.employer_row_name)}</a> · ${esc(titleCase(a.employer_row_city))}, ${esc(a.employer_row_state)}</span>
+        ${h.lawfirm ? `<span><b>Represented by</b>${esc(h.lawfirm)}</span>` : ""}
+      </div>
+    </section>
+    <div class="tiles">
+      <div class="card tile"><div class="label">Workers</div><div class="value">${n(h.workers)}</div><div class="sub">${h.workers_certified != null ? n(h.workers_certified) + " certified" : "positions on the form"}</div></div>
+      <div class="card tile"><div class="label">Wage offered</div><div class="value">${wage(h.wage_from, h.wage_unit, h.wage_to)}</div><div class="sub">lowest to highest offered</div></div>
+      ${h.prevailing_wage != null ? `<div class="card tile ${vs != null && vs < 0.02 ? "alert" : ""}"><div class="label">Prevailing wage</div><div class="value">${wage(h.prevailing_wage, h.pw_unit)}</div>
+        <div class="sub">${h.pw_wage_level ? "Level " + esc(h.pw_wage_level) + " · " : ""}${vs != null ? (vs >= 0 ? "offer is " + pct(vs) + " above" : "offer is " + pct(-vs) + " below") : ""}</div></div>` : ""}
+      <div class="card tile"><div class="label">Employment period</div><div class="value small-value">${day(h.begin_date)}<br>to ${day(h.end_date)}</div><div class="sub">${esc(h.worksite || "")}</div></div>
+    </div>
+    <div class="form-sections">
+      ${d.sections.map((sec) => `<section class="card panel">
+        <h3>${esc(sec.title)}</h3>
+        <dl class="kv">${sec.fields.map((f) => `<dt>${esc(f.label)}</dt><dd>${fmt(f)}</dd>`).join("")}</dl>
+      </section>`).join("")}
+    </div>
+    <p class="note">Every field DOL published for this application, as it appears in the disclosure file. Blank fields are left out.</p>
+    <div class="source">Source: <span class="mono">${esc(a.source_file)}</span>${a.dol_file_url ? ` from <a href="${esc(a.dol_file_url)}" target="_blank" rel="noopener">${esc(a.dol_file_url.split("/").pop())}</a>` : ""},
+      table <span class="mono">${esc(a.table_file)}</span> (sha256 <span class="mono">${esc(a.table_sha256.slice(0, 12))}…</span>)</div>`;
+  window.scrollTo(0, 0);
 }
 
 // ---------- watchlist ----------

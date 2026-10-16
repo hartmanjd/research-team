@@ -64,7 +64,8 @@ class BuildFilersTests(unittest.TestCase):
                 "EMPLOYER_ADDRESS1": "1 Main St", "EMPLOYER_CITY": "Austin", "EMPLOYER_STATE": "tx",
                 "EMPLOYER_POSTAL_CODE": "78701-1234", "EMPLOYER_FEIN": "12-3456789", "NAICS_CODE": "5415",
                 "H-1B_DEPENDENT": "No", "WILLFUL_VIOLATOR": "No",
-                "EMPLOYER_POC_EMAIL": "someone@example.com"}  # contact field must be dropped
+                "EMPLOYER_POC_EMAIL": "someone@example.com", "JOB_TITLE": "Developer",
+                "WAGE_RATE_OF_PAY_FROM": "120000"}
         self.q1 = os.path.join(self.d, "lca_q1.csv")
         self.q2 = os.path.join(self.d, "lca_q2.csv")
         write_csv(self.q1, [
@@ -110,11 +111,39 @@ class BuildFilersTests(unittest.TestCase):
         acme = [e for e in read_csv(out) if e["name_clean"] == "ACME SOFTWARE"][0]
         self.assertEqual((acme["n_applications"], acme["n_certified"]), ("2", "1"))
 
-    def test_no_contact_fields_in_outputs(self):
-        for name in ("filers.csv", "filers_applications.csv"):
-            text = read_text(os.path.join(self.d, name))
-            self.assertNotIn("POC", text)
-            self.assertNotIn("example.com", text)
+    def test_applications_keep_every_disclosure_column(self):
+        apps = read_csv(os.path.join(self.d, "filers_applications.csv"))
+        a = next(a for a in apps if a["case_number"] == "I-200-1")
+        self.assertEqual((a["job_title"], a["wage_rate_of_pay_from"], a["employer_poc_email"]),
+                         ("Developer", "120000", "someone@example.com"))
+        self.assertEqual((a["employer_fein"], a["fein"], a["h1b_dependent"]), ("12-3456789", "123456789", "No"))
+        # Point-of-contact details belong to an application, not to the employer row.
+        self.assertNotIn("example.com", read_text(self.out))
+
+    def test_counts_h2b_certifications(self):
+        h2b = os.path.join(self.d, "h2b.csv")
+        base = {"EMPLOYER_NAME": "Beta Farms", "EMPLOYER_STATE": "FL", "EMPLOYER_POSTAL_CODE": "33101",
+                "EMPLOYER_FEIN": "", "NAICS_CODE": "", "EMPLOYER_ADDRESS1": "", "EMPLOYER_CITY": ""}
+        write_csv(h2b, [{**base, "CASE_NUMBER": "H-1", "CASE_STATUS": "Determination Issued - Certification"},
+                        {**base, "CASE_NUMBER": "H-2", "CASE_STATUS": "Determination Issued - Partial Certification"},
+                        {**base, "CASE_NUMBER": "H-3", "CASE_STATUS": "Determination Issued - Denied"}])
+        out = os.path.join(self.d, "h2b_filers.csv")
+        with mock.patch("sys.stdout", io.StringIO()):
+            build_filers.main([out, h2b])
+        self.assertEqual([(e["n_applications"], e["n_certified"]) for e in read_csv(out)], [("3", "2")])
+
+    def test_reads_the_later_spelling_of_the_dependent_flag(self):
+        q4 = os.path.join(self.d, "lca_q4.csv")
+        write_csv(q4, [{"CASE_NUMBER": "I-200-9", "CASE_STATUS": "Certified", "VISA_CLASS": "H-1B",
+                        "EMPLOYER_NAME": "Gamma Co", "EMPLOYER_STATE": "NY", "EMPLOYER_POSTAL_CODE": "10001",
+                        "EMPLOYER_FEIN": "", "NAICS_CODE": "", "H_1B_DEPENDENT": "Yes", "WILLFUL_VIOLATOR": "No",
+                        "EMPLOYER_ADDRESS1": "", "EMPLOYER_CITY": "", "1ST_PWD_CASE_NUMBER": "P-1"}])
+        out = os.path.join(self.d, "q4.csv")
+        with mock.patch("sys.stdout", io.StringIO()):
+            build_filers.main([out, self.q1, q4])
+        self.assertEqual([e["h1b_dependent"] for e in read_csv(out) if e["name_clean"] == "GAMMA"], ["True"])
+        apps = {a["case_number"]: a for a in read_csv(os.path.join(self.d, "q4_applications.csv"))}
+        self.assertEqual((apps["I-200-9"]["pwd_case_number_1"], apps["I-200-1"]["pwd_case_number_1"]), ("P-1", ""))
 
     def test_both_tables_have_manifests_with_inputs(self):
         for name in ("filers.csv", "filers_applications.csv"):

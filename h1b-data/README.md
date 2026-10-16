@@ -6,14 +6,14 @@ The employer and application tables (`filers_*`), the database (`research.db`) a
 
 | File | What it is |
 | --- | --- |
-| filers_lca_fy2025.csv (not in git) | One row per H-1B (LCA) employer: cleaned name, state, ZIP, tax ID, counts, willful-violator flag |
+| filers_lca_fy2025.csv (not in git) | One row per H-1B (LCA) employer: cleaned name, state, ZIP, address, phone, tax ID, counts, H-1B-dependent and willful-violator flags |
 | filers_h2b_fy2025.csv (not in git) | Same for H-2B employers |
-| filers_*_applications.csv (not in git) | One row per application: DOL case number, status, visa class, source file and the employer key, linking each employer row to its filings |
+| filers_*_applications.csv (not in git) | One row per application with every column of the DOL disclosure file (job, worksite, wages, point of contact, attorney or agent, preparer, attestations), in lower case, plus the source file and the employer key that links each employer row to its filings |
 | name_match_benchmark.csv | How well name rules re-find the 144 employers in both programs, using tax ID as the answer key |
 | scripts/employer_keys.py | Name cleaning and ZIP/tax ID helpers |
 | scripts/provenance.py | Writes and checks the `.manifest.json` beside each data file |
 | scripts/xlsx_to_csv.py | Streams a DOL disclosure workbook to CSV, skipping blank padding rows |
-| scripts/build_filers.py | Turns the disclosure CSVs into the employer and application tables; a case number seen in several quarters is kept once, with its latest record |
+| scripts/build_filers.py | Turns the disclosure CSVs into the employer and application tables; a case number seen in several quarters is kept once, with its latest record. Column names that differ between files (`H-1B_DEPENDENT` and `H_1B_DEPENDENT`) are read as one |
 | scripts/name_match_benchmark.py | Produces name_match_benchmark.csv |
 | scripts/fetch_whd.py | Downloads WHD enforcement data (key from env var DOL_API_KEY, sent in the URL). 2,000 rows a page, backs off on rate limits, re-run with the same output file to resume |
 | scripts/match_whd.py | Match rates of WHD H-1B/H-2B violation cases to filers |
@@ -40,10 +40,15 @@ A checksum is a fingerprint of the file: change one character and it changes. `p
 | Table | One row per | Key columns |
 | --- | --- | --- |
 | sources | input file | file, sha256, rows, urls, created_utc, manifest |
-| employers | employer per program (H-1B or H-2B) | employer_id, program, name_clean, state, zip5, fein, n_applications, willful_violator |
-| applications | visa application | case_number, employer_id, case_status, visa_class |
+| employers | employer per program (H-1B or H-2B) | employer_id, program, name_clean, state, zip5, address, phone, fein, n_applications, n_certified, h1b_dependent, willful_violator |
+| applications | visa application | case_number, employer_id, case_status, visa_class, then every disclosure column (179 in all; H-2B-only columns are empty on H-1B rows and the other way round) |
 | violation_cases | WHD enforcement case | case_id, names, address, dates, back wages, fines, violation counts by law, load_dt |
 | matches | WHD case linked to an employer | case_id, employer_id, method, est_false_match_rate, whd_name_field, employer_name_field |
+
+The applications table keeps the public disclosure record as DOL published it, including the employer's point of contact,
+the attorney or agent and law firm, and the preparer. Wages, prevailing wages, hours and worker counts are stored as
+numbers; everything else (ZIPs, phone numbers, codes) is text. `n_certified` counts H-1B "Certified" and "Certified -
+Withdrawn" and H-2B "Determination Issued - Certification" or "Partial Certification".
 
 WHD cases have no tax ID, so `matches` links them by cleaned name + ZIP, or failing that cleaned name + state, using the WHD trade or legal name against the employer's name or DBA. `est_false_match_rate` is that rule's false-match rate on the tax-ID benchmark (`name_match_benchmark.csv`).
 
@@ -51,10 +56,12 @@ WHD cases have no tax ID, so `matches` links them by cleaned name + ZIP, or fail
 
 To rebuild the employer tables, download the FY2025 LCA (Q1-Q4) and H-2B disclosure files from
 https://www.dol.gov/agencies/eta/foreign-labor/performance, convert each to CSV with
-`python3 scripts/xlsx_to_csv.py IN.xlsx OUT.csv --source-url URL`, then (quarters in date order):
+`python3 scripts/xlsx_to_csv.py IN.xlsx OUT.csv --source-url URL`, then (quarters in date order, with each
+workbook's URL as a `--source-url` so the website can link every application to its file):
 
-    python3 scripts/build_filers.py filers_lca_fy2025.csv LCA_Q1.csv LCA_Q2.csv LCA_Q3.csv LCA_Q4.csv
-    python3 scripts/build_filers.py filers_h2b_fy2025.csv H2B_FY2025.csv
+    python3 scripts/build_filers.py filers_lca_fy2025.csv LCA_Q1.csv LCA_Q2.csv LCA_Q3.csv LCA_Q4.csv \
+        --source-url https://www.dol.gov/sites/dolgov/files/ETA/oflc/pdfs/LCA_Disclosure_Data_FY2025_Q1.xlsx ...
+    python3 scripts/build_filers.py filers_h2b_fy2025.csv H2B_FY2025.csv --source-url ...
 
 To re-run the WHD match (raw download about 70 MB and 25 minutes; key in env var DOL_API_KEY):
 

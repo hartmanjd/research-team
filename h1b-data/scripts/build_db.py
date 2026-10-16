@@ -3,7 +3,9 @@
 Tables:
   sources          one row per input file, from its manifest (checksum, rows, URLs)
   employers        one row per employer per program (H-1B or H-2B)
-  applications     one row per visa application, with its DOL case number
+  applications     one row per visa application: its DOL case number and every
+                   column of the public disclosure file (H-2B-only columns are
+                   blank on H-1B rows and the other way round)
   violation_cases  one row per WHD enforcement case
   matches          links a WHD case to an employer: how it was matched and the
                    rule's false-match rate on the tax-ID benchmark
@@ -35,12 +37,9 @@ CREATE TABLE sources (
 CREATE TABLE employers (
   employer_id INTEGER PRIMARY KEY, program TEXT, name_clean TEXT, state TEXT, zip5 TEXT,
   employer_name TEXT, dba TEXT, name_raw TEXT, dba_clean TEXT, city TEXT, address TEXT,
+  address2 TEXT, postal_code TEXT, phone TEXT, phone_ext TEXT,
   fein TEXT, naics TEXT, visa_classes TEXT, n_applications INTEGER, n_certified INTEGER,
   h1b_dependent INTEGER, willful_violator INTEGER, source_files TEXT,
-  source_id INTEGER REFERENCES sources);
-CREATE TABLE applications (
-  case_number TEXT, program TEXT, employer_id INTEGER REFERENCES employers,
-  case_status TEXT, visa_class TEXT, fein TEXT, source_file TEXT,
   source_id INTEGER REFERENCES sources);
 CREATE TABLE violation_cases (
   case_id INTEGER PRIMARY KEY, trade_nm TEXT, legal_name TEXT, street_addr_1_txt TEXT,
@@ -56,13 +55,34 @@ CREATE TABLE matches (
   PRIMARY KEY (case_id, employer_id));
 CREATE INDEX employers_fein ON employers(fein);
 CREATE INDEX employers_name ON employers(name_clean, state);
-CREATE INDEX applications_employer ON applications(employer_id);
-CREATE INDEX applications_case ON applications(case_number);
 CREATE INDEX matches_employer ON matches(employer_id);
 """
 INT_COLS = ["n_applications", "n_certified", "case_violtn_cnt", "ee_violtd_cnt", "h1b_violtn_cnt",
             "h1b_ee_atp_cnt", "h2b_violtn_cnt", "h2b_ee_atp_cnt", "h2a_violtn_cnt", "flsa_violtn_cnt"]
 REAL_COLS = ["bw_atp_amt", "cmp_assd", "h1b_bw_atp_amt", "h1b_cmp_assd_amt", "h2b_bw_atp_amt"]
+# Disclosure columns stored as numbers, so wages and worker counts can be compared and summed.
+APP_INT_COLS = ["total_worker_positions", "new_employment", "continued_employment",
+                "change_previous_employment", "new_concurrent_employment", "change_employer",
+                "amended_petition", "worksite_workers", "total_worksite_locations",
+                "cap_subject_workers", "cap_exempt_workers", "total_workers_requested",
+                "total_workers_certified", "training_months", "work_experience_months",
+                "supervise_how_many"]
+APP_REAL_COLS = ["wage_rate_of_pay_from", "wage_rate_of_pay_to", "prevailing_wage",
+                 "basic_wage_rate_from", "basic_wage_rate_to", "overtime_rate_from",
+                 "overtime_rate_to", "anticipated_number_of_hours", "sunday_hours", "monday_hours",
+                 "tuesday_hours", "wednesday_hours", "thursday_hours", "friday_hours",
+                 "saturday_hours"]
+# Disclosure columns the website reads; created empty if no input file has them.
+APP_REQUIRED = ["decision_date", "job_title", "soc_code", "soc_title", "begin_date", "end_date",
+                "requested_begin_date", "requested_end_date", "worksite_city", "worksite_state",
+                "total_worker_positions", "total_workers_requested", "total_workers_certified",
+                "wage_rate_of_pay_from", "wage_rate_of_pay_to", "wage_unit_of_pay", "basic_wage_rate_from",
+                "basic_wage_rate_to", "per", "prevailing_wage", "pw_unit_of_pay", "pw_wage_level",
+                "lawfirm_name_business_name", "agent_attorney_first_name", "agent_attorney_last_name",
+                "attorney_agent_first_name", "attorney_agent_last_name"]
+# Shown first in the applications table; the remaining disclosure columns follow in file order.
+APP_FIRST = ["case_number", "program", "employer_id", "case_status", "visa_class", "fein",
+             "source_file", "source_id"]
 
 
 def read(path):
@@ -79,13 +99,14 @@ def add_source(con, path):
     return cur.lastrowid
 
 
-def numeric(df):
-    for c in INT_COLS:
+def numeric(df, int_cols=INT_COLS, real_cols=REAL_COLS):
+    for c in int_cols:
         if c in df:
-            df[c] = pd.to_numeric(df[c], errors="coerce").astype("Int64")
-    for c in REAL_COLS:
+            df[c] = pd.to_numeric(df[c].astype("string").str.replace(",", ""), errors="coerce").round().astype("Int64")
+    for c in real_cols:
         if c in df:
-            df[c] = pd.to_numeric(df[c], errors="coerce")
+            df[c] = pd.to_numeric(df[c].astype("string").str.replace(r"[$,]", "", regex=True),
+                                  errors="coerce")
     return df
 
 
@@ -105,9 +126,22 @@ def load_program(con, program, filers_path, next_id):
         raise ValueError(f"{os.path.basename(app_path)} has applications with no employer row")
     apps["program"] = program
     apps["source_id"] = add_source(con, app_path)
-    apps[["case_number", "program", "employer_id", "case_status", "visa_class", "fein",
-          "source_file", "source_id"]].to_sql("applications", con, if_exists="append", index=False)
-    return emp
+    apps["employer_id"] = apps.employer_id.astype(int)
+    rest = [c for c in apps.columns if c not in APP_FIRST and c not in ("name_clean", "state", "zip5")]
+    return emp, apps[APP_FIRST + rest]
+
+
+def load_applications(con, frames):
+    """One applications table for both programs; columns one program lacks stay empty."""
+    cols = list(dict.fromkeys([c for f in frames for c in f.columns] + APP_REQUIRED))
+    # Text unless listed as a number, so ZIPs, phones and codes keep their leading zeros.
+    types = {c: "INTEGER" if c in APP_INT_COLS + ["employer_id", "source_id"] else
+             "REAL" if c in APP_REAL_COLS else "TEXT" for c in cols}
+    for f in frames:  # one at a time, to keep memory down
+        numeric(f.reindex(columns=cols), APP_INT_COLS, APP_REAL_COLS).to_sql(
+            "applications", con, if_exists="append", index=False, dtype=types)
+    con.execute("CREATE INDEX applications_employer ON applications(employer_id)")
+    con.execute("CREATE UNIQUE INDEX applications_case ON applications(case_number)")
 
 
 def whd_keys(whd):
@@ -146,8 +180,9 @@ def build(out, lca, h2b, whd_path, bench):
         os.remove(out)
     con = sqlite3.connect(out)
     con.executescript(SCHEMA)
-    lca_emp = load_program(con, "H-1B", lca, 1)
-    h2b_emp = load_program(con, "H-2B", h2b, len(lca_emp) + 1)
+    lca_emp, lca_apps = load_program(con, "H-1B", lca, 1)
+    h2b_emp, h2b_apps = load_program(con, "H-2B", h2b, len(lca_emp) + 1)
+    load_applications(con, [lca_apps, h2b_apps])
     emp = pd.concat([lca_emp, h2b_emp])
 
     whd = read(whd_path)

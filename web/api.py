@@ -76,8 +76,14 @@ def meta():
 
 @app.get("/api/search")
 def search(q_: str = Query("", alias="q")):
+    """Employers by name, trade name or tax ID. A DOL case number returns that application's
+    employer, with the case number, so the page can open the application."""
     c = con()
     try:
+        hit = q.find_application(c, q_)
+        if hit:
+            return [dict(r, case_number=hit["case_number"])
+                    for r in q.search_employers_by_id(c, hit["employer_id"])]
         return q.search_employers(c, q_)
     finally:
         c.close()
@@ -98,7 +104,7 @@ def employer(employer_id: int):
         e["sector_name"] = q.SECTORS.get(e["sector"])
         return {"employer": e, "summary": q.summary(c, employer_id),
                 "same_tax_id": q.same_tax_id(c, employer_id), "cases": cases,
-                "case_years": q.case_years(c, employer_id)}
+                "case_years": q.case_years(c, employer_id), "profile": q.employer_profile(c, employer_id)}
     finally:
         c.close()
 
@@ -113,6 +119,23 @@ def applications(employer_id: int, page: int = Query(1, ge=1)):
         start = (page - 1) * PAGE_SIZE
         return {"total": len(apps), "page": page, "page_size": PAGE_SIZE,
                 "rows": apps[start:start + PAGE_SIZE]}
+    finally:
+        c.close()
+
+
+@app.get("/api/applications/{case_number}")
+def application(case_number: str):
+    """One application with every column of its DOL disclosure record, grouped for display."""
+    c = con()
+    try:
+        a = q.application(c, case_number)
+        if not a:
+            raise HTTPException(404, "No application with that case number")
+        return {"application": {k: a[k] for k in ("case_number", "program", "employer_id", "case_status",
+                                                  "visa_class", "source_file", "table_file", "table_sha256",
+                                                  "dol_file_url", "employer_row_name", "employer_row_city",
+                                                  "employer_row_state")},
+                "highlights": q.application_highlights(a), "sections": q.application_sections(a)}
     finally:
         c.close()
 

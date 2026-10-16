@@ -21,7 +21,9 @@ def filing(case, name, state, zip_, fein, dba="", visa="H-1B", status="Certified
     return {"CASE_NUMBER": case, "CASE_STATUS": status, "VISA_CLASS": visa, "EMPLOYER_NAME": name,
             "TRADE_NAME_DBA": dba, "EMPLOYER_ADDRESS1": "1 Main St", "EMPLOYER_CITY": "Town",
             "EMPLOYER_STATE": state, "EMPLOYER_POSTAL_CODE": zip_, "EMPLOYER_FEIN": fein,
-            "NAICS_CODE": "1111", "H-1B_DEPENDENT": "No", "WILLFUL_VIOLATOR": "No"}
+            "NAICS_CODE": "1111", "H-1B_DEPENDENT": "No", "WILLFUL_VIOLATOR": "No",
+            **({"BASIC_WAGE_RATE_FROM": "18.25"} if visa == "H-2B" else
+               {"TOTAL_WORKER_POSITIONS": "2", "WAGE_RATE_OF_PAY_FROM": "$95,000.50"})}
 
 
 def whd_case(case_id, trade, legal, state, zip_, h1b=0, h2b=0):
@@ -90,6 +92,12 @@ class BuildDbTests(unittest.TestCase):
         ])
         # Same cleaned name in another state (Acme in NY) is not linked to case 10.
         self.assertEqual(self.q("SELECT COUNT(*) FROM matches WHERE case_id=10"), [(1,)])
+
+    def test_applications_keep_disclosure_columns_and_numbers(self):
+        rows = self.q("SELECT case_number, naics_code, total_worker_positions, wage_rate_of_pay_from"
+                      " FROM applications WHERE case_number IN ('I-1', 'H-1') ORDER BY case_number")
+        self.assertEqual(rows, [("H-1", "1111", None, None), ("I-1", "1111", 2, 95000.5)])
+        self.assertEqual(self.q("SELECT basic_wage_rate_from FROM applications WHERE case_number='H-1'"), [(18.25,)])
 
     def test_cases_keep_numbers_and_load_dates(self):
         self.assertEqual(self.q("SELECT case_id, h1b_violtn_cnt, bw_atp_amt, load_dt FROM violation_cases"

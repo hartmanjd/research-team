@@ -17,9 +17,15 @@ LCA_URL = "https://example.gov/lca.xlsx"
 
 def make_db(d):
     p = lambda n: os.path.join(d, n)
+    job = {"JOB_TITLE": "Developer", "SOC_CODE": "15-1252.00", "SOC_TITLE": "Software Developers",
+           "WORKSITE_CITY": "Austin", "WORKSITE_STATE": "TX", "WAGE_UNIT_OF_PAY": "Year",
+           "PREVAILING_WAGE": "90000", "PW_UNIT_OF_PAY": "Year", "PW_WAGE_LEVEL": "II",
+           "LAWFIRM_NAME_BUSINESS_NAME": "Law Firm LLP", "AGENT_ATTORNEY_FIRST_NAME": "Ann",
+           "AGENT_ATTORNEY_LAST_NAME": "Lee", "EMPLOYER_POC_EMAIL": "hr@acme.example"}
     write_csv(p("lca.csv"), [
-        filing("I-1", "Acme Software LLC", "TX", "78701", "111111111"),
-        filing("I-2", "ACME SOFTWARE, INC.", "TX", "78701", "111111111", status="Withdrawn"),
+        {**filing("I-1", "Acme Software LLC", "TX", "78701", "111111111"), **job},  # offers $95,000.50
+        {**filing("I-2", "ACME SOFTWARE, INC.", "TX", "78701", "111111111", status="Withdrawn"), **job,
+         "WAGE_RATE_OF_PAY_FROM": "45", "WAGE_UNIT_OF_PAY": "Hour", "WORKSITE_CITY": "Dallas"},
         filing("I-3", "Acme Software", "CA", "94105", "111111111"),
         filing("I-4", "Acme Analytics", "NY", "10001", "444444444"),
     ])
@@ -64,6 +70,41 @@ class QueryTests(unittest.TestCase):
                           ("Acme Software", "TX", "H-2B")])
         self.assertIn("Acme Analytics", [h["employer_name"] for h in queries.search_employers(self.con, "acme")])
         self.assertEqual(queries.search_employers(self.con, "llc"), [])  # only legal-form words
+
+    def test_search_by_tax_id_and_case_number(self):
+        self.assertEqual({(h["employer_name"], h["program"]) for h in queries.search_employers(self.con, "11-1111111")},
+                         {("Acme Software LLC", "H-1B"), ("Acme Software", "H-1B"), ("Acme Software", "H-2B")})
+        self.assertEqual(queries.find_application(self.con, " i-2 ")["employer_id"], self.acme_tx()["employer_id"])
+        self.assertIsNone(queries.find_application(self.con, "I-404"))
+        self.assertIsNone(queries.find_application(self.con, "Infosys"))
+
+    def test_application_shows_every_form_field_by_section(self):
+        a = queries.application(self.con, "I-1")
+        self.assertEqual((a["employer_id"], a["dol_file_url"]), (self.acme_tx()["employer_id"], LCA_URL))
+        sections = {s["title"]: {f["field"]: f["value"] for f in s["fields"]}
+                    for s in queries.application_sections(a)}
+        self.assertEqual(sections["Job"]["job_title"], "Developer")
+        self.assertEqual(sections["Wages"]["wage_rate_of_pay_from"], 95000.5)
+        self.assertEqual(sections["Employer point of contact"]["employer_poc_email"], "hr@acme.example")
+        self.assertEqual(sections["Attorney or agent"]["lawfirm_name_business_name"], "Law Firm LLP")
+        self.assertNotIn("source_id", {f for fs in sections.values() for f in fs})
+        h = queries.application_highlights(a)
+        self.assertEqual((h["workers"], h["worksite"], h["lawfirm"]), (2, "Austin, TX", "Law Firm LLP"))
+        self.assertAlmostEqual(h["wage_vs_prevailing"], 95000.5 / 90000 - 1)
+        self.assertIsNone(queries.application(self.con, "I-404"))
+
+    def test_employer_profile(self):
+        p = queries.employer_profile(self.con, self.acme_tx()["employer_id"])
+        self.assertEqual([(j["soc_title"], j["applications"], j["workers"], j["job_titles"]) for j in p["jobs"]],
+                         [("Software Developers", 2, 4, ["Developer"])])
+        self.assertEqual([w["name"] for w in p["worksites"]], ["Austin, TX", "Dallas, TX"])
+        self.assertEqual([(r["name"], r["applications"]) for r in p["lawfirms"]], [("Law Firm LLP", 2)])
+        self.assertEqual([r["name"] for r in p["attorneys"]], ["Ann Lee"])
+        # $95,000.50 a year is 5.6% above $90,000; $45 an hour (x 2080 = $93,600) is 4% above.
+        self.assertEqual({b["band"]: b["applications"] for b in p["wage_bands"]}["2-10% above"], 2)
+        self.assertEqual(p["wage_levels"], [{"level": "II", "applications": 2}])
+        self.assertEqual(queries.wage_band(0.99), "Below prevailing")
+        self.assertEqual(queries.wage_band(1.6), "50%+ above")
 
     def test_summary_totals_the_linked_cases(self):
         s = queries.summary(self.con, self.acme_tx()["employer_id"])
