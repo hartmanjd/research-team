@@ -4,6 +4,7 @@ Plain functions over a sqlite3 connection, returning lists of dicts, so they can
 be tested without a web server. See h1b-data/README.md for the tables.
 """
 import gzip, hashlib, os, re, shutil, sqlite3, sys, urllib.request
+from functools import lru_cache
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "h1b-data", "scripts"))
 from employer_keys import clean_name, fein as clean_fein  # noqa: E402
@@ -600,3 +601,94 @@ def match_label(method, rate):
 def sources(con):
     return rows(con, "SELECT source_id, file, rows, sha256, urls, created_utc, script FROM sources"
                      " ORDER BY source_id")
+
+
+# ---------- Red flags ----------
+# Plain, explainable patterns in an employer's own FY2025 applications that are worth a closer look.
+# None is evidence of a violation. Each flag needs a minimum number of applications, so a handful of
+# filings cannot trip it, and each is shown next to the same share across all employers in the program.
+
+_ANNUAL = """(CASE {unit} WHEN 'Hour' THEN 2080 WHEN 'Week' THEN 52 WHEN 'Bi-Weekly' THEN 26
+              WHEN 'Month' THEN 12 WHEN 'Year' THEN 1 END)"""
+_AT_FLOOR = (f"(a.wage_rate_of_pay_from * {_ANNUAL.format(unit='a.wage_unit_of_pay')}"
+             f" < 1.02 * a.prevailing_wage * {_ANNUAL.format(unit='a.pw_unit_of_pay')})")
+_HAS_WAGES = (f"(a.wage_rate_of_pay_from > 0 AND a.prevailing_wage > 0 AND {_ANNUAL.format(unit='a.wage_unit_of_pay')}"
+              f" IS NOT NULL AND {_ANNUAL.format(unit='a.pw_unit_of_pay')} IS NOT NULL)")
+_NOT_CERTIFIED = "(a.case_status IN ('Withdrawn', 'Denied', 'Determination Issued - Denied', 'Determination Issued - Rejected'))"
+_AWAY = "(a.worksite_state != '' AND a.worksite_state != e.state)"
+
+# key, title, programs, numerator, denominator (both SQL over applications a JOIN employers e),
+# threshold share, minimum denominator, and the sentence that explains it ({k} of {n}, {share}, {base}).
+RED_FLAGS = [
+    ("wage_floor", "Wages at the floor", ("H-1B",), _AT_FLOOR, _HAS_WAGES, 0.95, 20,
+     "{k} of {n} applications ({share}) offer less than 2% above the prevailing wage, against {base} for all "
+     "H-1B applications. Paying right at the legal minimum is common, but a filer that almost always does so is "
+     "worth comparing with what workers are actually paid."),
+    ("entry_level", "Mostly entry-level wage levels", ("H-1B",), "(a.pw_wage_level = 'I')",
+     "(a.pw_wage_level IN ('I', 'II', 'III', 'IV'))", 0.75, 20,
+     "{k} of {n} applications ({share}) use wage level I, the entry-level prevailing wage, against {base} for "
+     "all H-1B applications. Level I is meant for jobs needing little experience."),
+    # H-1B only: H-2B withdrawals are routine (the season's cap fills), so the flag would say little there.
+    ("not_certified", "Many withdrawn or denied applications", ("H-1B",), _NOT_CERTIFIED, "1", 0.4, 10,
+     "{k} of {n} applications ({share}) were withdrawn before a decision, denied or rejected, against {base} "
+     "for all H-1B applications."),
+    ("away", "Most workers placed outside the home state", ("H-1B", "H-2B"), _AWAY, "(a.worksite_state != '')",
+     0.95, 20,
+     "{k} of {n} applications ({share}) put the worker in a different state from the employer's address, against "
+     "{base} for all {program} applications. This is typical of staffing and consulting firms that place workers "
+     "at client sites, where wage and hour problems are harder to see."),
+]
+
+
+def _db_path(con):
+    return con.execute("PRAGMA database_list").fetchone()[2]
+
+
+def warm_red_flags(path=None):
+    """Compute the program baselines ahead of the first employer page (they take a few seconds)."""
+    con = connect(path)
+    try:
+        _flag_baselines(_db_path(con))
+    finally:
+        con.close()
+
+
+@lru_cache(maxsize=4)
+def _flag_baselines(db_key):
+    con = connect(db_key)
+    try:
+        out = {}
+        for key, _, programs, num, den, *_ in RED_FLAGS:
+            for p in programs:
+                r = rows(con, f"""SELECT SUM(CASE WHEN {num} THEN 1 ELSE 0 END) AS k, COUNT(*) AS n
+                                  FROM applications a JOIN employers e USING (employer_id)
+                                  WHERE e.program = ? AND {den}""", p)[0]
+                out[(key, p)] = (r["k"] or 0) / r["n"] if r["n"] else None
+        return out
+    finally:
+        con.close()
+
+
+def red_flags(con, employer_id):
+    """The red flags this employer's FY2025 applications trip, each with its counts and the program baseline."""
+    e = employer(con, employer_id)
+    if not e:
+        return []
+    db_key = _db_path(con)
+    pct = lambda x: f"{100 * x:.0f}%" if x is not None else "–"
+    out = []
+    for key, title, programs, num, den, threshold, min_n, text in RED_FLAGS:
+        if e["program"] not in programs:
+            continue
+        r = rows(con, f"""SELECT SUM(CASE WHEN {num} THEN 1 ELSE 0 END) AS k, COUNT(*) AS n
+                          FROM applications a JOIN employers e USING (employer_id)
+                          WHERE a.employer_id = ? AND {den}""", employer_id)[0]
+        k, n = r["k"] or 0, r["n"]
+        if n < min_n or k / n < threshold:
+            continue
+        base = _flag_baselines(db_key).get((key, e["program"]))
+        out.append({"key": key, "title": title, "applications": k, "of": n, "share": k / n, "baseline": base,
+                    "threshold": threshold, "min_applications": min_n,
+                    "detail": text.format(k=f"{k:,}", n=f"{n:,}", share=pct(k / n), base=pct(base),
+                                          program=e["program"])})
+    return out
