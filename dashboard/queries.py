@@ -675,3 +675,43 @@ def debarments(con, path=None, today=None):
             SELECT employer_id, employer_name, program, city, state, n_applications FROM employers
             WHERE employer_id = ?""", i)]})
     return out
+
+
+# ---------- Methodology ----------
+BENCHMARK_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "h1b-data", "name_match_benchmark.csv")
+MATCH_RATES_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "h1b-data", "whd_match_rates.csv")
+
+
+def _read_csv(path):
+    if not os.path.exists(path):
+        return []
+    with open(path, newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def methodology(con):
+    """The numbers the methodology page quotes, read from the database and the benchmark files."""
+    one = lambda sql: rows(con, sql)[0]
+    return {
+        "sources": sources(con),
+        "employers": rows(con, "SELECT program, COUNT(*) AS employers, SUM(n_applications) AS applications"
+                               " FROM employers GROUP BY program ORDER BY program"),
+        "decisions": one("SELECT MIN(decision_date) AS first, MAX(decision_date) AS last FROM applications"),
+        "whd": one("""SELECT COUNT(*) AS cases, MIN(NULLIF(findings_end_date, '')) AS first_findings,
+                             SUM(findings_end_date IS NULL OR findings_end_date = '') AS no_findings_date,
+                             MIN(load_dt) AS first_load, MAX(load_dt) AS last_load FROM violation_cases"""),
+        "matches": rows(con, """SELECT method, COUNT(*) AS links, COUNT(DISTINCT case_id) AS cases,
+                                       COUNT(DISTINCT employer_id) AS employers,
+                                       MAX(est_false_match_rate) AS false_match_rate
+                                FROM matches GROUP BY method ORDER BY method DESC"""),
+        "matched": one("SELECT COUNT(DISTINCT case_id) AS cases, COUNT(DISTINCT employer_id) AS employers FROM matches"),
+        "benchmark": [{"rule": r["rule"], "employers": int(r["true_shared_employers"]), "found": int(r["found"]),
+                       "recall": float(r["recall"]), "false_match_rate": float(r["false_match_rate"])}
+                      for r in _read_csv(BENCHMARK_CSV)],
+        "visa_case_match_rates": [{"cases": r["cases"], "rule": r["rule"], "n_cases": int(r["n_cases"]),
+                                   "match_rate": float(r["match_rate"]),
+                                   "n_cases_2020plus": int(r["n_cases_2020plus"]),
+                                   "match_rate_2020plus": float(r["match_rate_2020plus"])}
+                                  for r in _read_csv(MATCH_RATES_CSV)],
+        "debarments": len(load_debarments()),
+    }

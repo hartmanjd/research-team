@@ -61,6 +61,7 @@ async function route() {
     else if (path === "/industries") { setActiveNav("industries"); await industriesPage(params); }
     else if (path === "/ask") { setActiveNav("ask"); await askPage(); }
     else if (path === "/debarments") { setActiveNav(""); await debarmentsPage(params); }
+    else if (path === "/methodology") { setActiveNav(""); await methodologyPage(); }
     else { setActiveNav("search"); searchPage(params); }
   } catch (err) {
     app.innerHTML = `<div class="empty"><h2>Something went wrong</h2><p>${esc(err.message)}</p></div>`;
@@ -261,7 +262,7 @@ async function employerPage(id) {
     ${d.cases.length ? `
       <div class="callout">${icon.info}<div>WHD records carry no tax ID, so each case is linked by name and location.
         A <b style="color:var(--ok)">green</b> edge means the ZIP code matched too; <b style="color:var(--warn)">amber</b> means only the state did.
-        Check the WHD name and address before relying on a link.</div></div>
+        Check the WHD name and address before relying on a link. <a href="#/methodology">How cases are linked</a>.</div></div>
       ${d.cases.map(caseCard).join("")}` : `<div class="card empty">No WHD enforcement case is linked to this employer.</div>`}
 
     <h2 class="section">Visa applications <span class="count" id="app-count"></span></h2>
@@ -1177,4 +1178,143 @@ async function debarmentsPage(params) {
     <p class="note">Sources: <a href="https://www.dol.gov/agencies/eta/foreign-labor/program-debarments" target="_blank" rel="noopener">OFLC program debarments</a>
       (PERM, H-2A, H-2B) and <a href="https://www.dol.gov/agencies/whd/immigration/h1b/debarment" target="_blank" rel="noopener">WHD H-1B debarments</a>.
       DOL's H-1B list gives no addresses, so H-1B entries match on name alone.</p>`;
+}
+
+// ---------- methodology ----------
+async function methodologyPage() {
+  loading("Loading methodology…");
+  const m = await api("/methodology");
+  const rule = (name) => m.benchmark.find((b) => b.rule === name) || {};
+  const used = ["clean name + ZIP", "clean name + state"];
+  const total = m.employers.reduce((a, e) => a + e.employers, 0);
+  const apps = m.employers.reduce((a, e) => a + e.applications, 0);
+  const shortUrl = (u) => u.split("/").pop() || u;
+  const visaRates = m.visa_case_match_rates.filter((r) => r.rule === "clean name + state");
+  const bar = (v, cls) => `<span class="m-track"><span class="m-fill ${cls}" style="width:${Math.max(1, 100 * v)}%"></span></span>`;
+  app.innerHTML = `
+    <div class="eyebrow">How this site works</div>
+    <h1 class="page-title">Methodology</h1>
+    <p class="lede">Where the data comes from, how Wage and Hour cases are linked to visa employers, how often those links are
+      wrong, and what the site cannot tell you. Every figure on this page is read from the current database.</p>
+    <nav class="toc">${[["sources", "Sources"], ["records", "What a row is"], ["matching", "Linking WHD cases"],
+      ["accuracy", "How accurate the links are"], ["numbers", "What the numbers mean"], ["limits", "Limits"], ["check", "Checking a number"]]
+      .map(([id, l]) => `<a href="#/methodology" data-jump="${id}">${l}</a>`).join("")}</nav>
+
+    <section class="method" id="m-sources">
+      <h2 class="section">Sources</h2>
+      <p>Three public Department of Labor sources. Each file the site is built from has a manifest with its download address,
+        row count, SHA-256 checksum and build time, so a reader can confirm they have the same file.</p>
+      <ul>
+        <li><b>H-1B (LCA) and H-2B disclosure files</b> for fiscal year 2025, from DOL's Office of Foreign Labor Certification
+          (<a href="https://www.dol.gov/agencies/eta/foreign-labor/performance" target="_blank" rel="noopener">OFLC performance data</a>).
+          One row per application, with the employer's name, address and tax ID (FEIN), job, wages, worksite and representative.</li>
+        <li><b>Wage and Hour Division (WHD) enforcement cases</b> from DOL's
+          <a href="https://apiprod.dol.gov/v4/get/WHD/enforcement/json" target="_blank" rel="noopener">enforcement data API</a>:
+          every concluded WHD case under every law WHD enforces, with back wages, penalties and violation counts by law.</li>
+        <li><b>DOL debarment lists</b>: OFLC's program debarments (PERM, H-2A, H-2B) and WHD's H-1B debarments,
+          ${n(m.debarments)} entries. See <a href="#/debarments">Debarments</a>.</li>
+      </ul>
+      <div class="card"><div class="table-wrap"><table class="mini">
+        <thead><tr><th>File</th><th class="num">Rows</th><th>Built</th><th>SHA-256</th><th>From</th></tr></thead>
+        <tbody>${m.sources.map((r) => `<tr><td class="mono small">${esc(r.file)}</td><td class="num">${n(r.rows)}</td>
+          <td class="nowrap">${day(r.created_utc)}</td><td class="mono small" title="${esc(r.sha256)}">${esc(r.sha256.slice(0, 12))}…</td>
+          <td class="wrap small">${r.urls ? r.urls.split(";").filter((u) => !u.endsWith("/performance")).map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(shortUrl(u))}</a>`).join(", ") : `<span class="muted">${esc(r.script)}</span>`}</td></tr>`).join("")}</tbody>
+      </table></div></div>
+    </section>
+
+    <section class="method" id="m-records">
+      <h2 class="section">What a row is</h2>
+      <ul>
+        <li><b>Application:</b> one DOL case number. A case that appears in more than one quarterly file keeps its latest status.
+          The data holds ${n(apps)} applications decided ${day(m.decisions.first)} to ${day(m.decisions.last)}.</li>
+        <li><b>Employer:</b> one company name at one address in one program. ${n(total)} rows:
+          ${m.employers.map((e) => `${n(e.employers)} ${esc(e.program)}`).join(" and ")}. A company filing from two addresses,
+          or in both programs, has a row for each; rows that share a tax ID list each other on the employer page.</li>
+        <li><b>WHD case:</b> one concluded investigation, ${n(m.whd.cases)} in all. Findings periods start in
+          ${String(m.whd.first_findings || "").slice(0, 4)}; ${n(m.whd.no_findings_date)} cases have no findings date. WHD loaded the records
+          between ${day(m.whd.first_load)} and ${day(m.whd.last_load)}, and each case keeps its load date.</li>
+      </ul>
+    </section>
+
+    <section class="method" id="m-matching">
+      <h2 class="section">Linking WHD cases to employers</h2>
+      <p>WHD records carry no tax ID, so a case is linked to an employer by name and location. Both names are cleaned first:
+        uppercased, “&amp;” read as “and”, punctuation removed, anything after “d/b/a” dropped, and legal-form words such as
+        LLC, Inc., Corp., Co. and Ltd. removed. WHD's trade name and legal name are each compared with the employer's name
+        and trade name (DBA).</p>
+      <ol>
+        <li><b>Clean name + ZIP code:</b> the cleaned names match and so do the five-digit ZIP codes.</li>
+        <li><b>Clean name + state:</b> used only when no ZIP match exists for that case.</li>
+      </ol>
+      <div class="card"><div class="table-wrap"><table class="mini">
+        <thead><tr><th>Rule</th><th class="num">Links</th><th class="num">WHD cases</th><th class="num">Employer rows</th><th class="num">Wrong in the tax-ID test</th></tr></thead>
+        <tbody>${m.matches.map((r) => `<tr><td>${esc(r.method)}</td><td class="num">${n(r.links)}</td><td class="num">${n(r.cases)}</td>
+          <td class="num">${n(r.employers)}</td><td class="num">${pct(r.false_match_rate)}</td></tr>`).join("")}
+          <tr><td><b>Either rule</b></td><td></td><td class="num"><b>${n(m.matched.cases)}</b></td><td class="num"><b>${n(m.matched.employers)}</b></td><td></td></tr></tbody>
+      </table></div></div>
+      <p class="note">On employer pages a green edge marks a case linked by ZIP code and amber one linked by state only.
+        A case can link to more than one employer row, for example one company at two addresses.</p>
+    </section>
+
+    <section class="method" id="m-accuracy">
+      <h2 class="section">How accurate the links are</h2>
+      <p>Both disclosure files carry tax IDs, so the ${n(rule("clean name").employers)} companies that filed in both programs give an
+        answer key: each name rule is run between the two files, and a link to a different tax ID counts as wrong. Two numbers
+        come out of it: how many of the true companies a rule finds, and what share of its links are wrong.</p>
+      <div class="card panel"><div class="bench">${m.benchmark.map((b) => `
+        <div class="bench-row ${used.includes(b.rule) ? "used" : ""}">
+          <div class="bench-name">${esc(b.rule)}${used.includes(b.rule) ? ' <span class="badge">used</span>' : ""}</div>
+          <div class="m-bars">
+            <span class="m-label">Found</span>${bar(b.recall, "all")}<b>${pct(b.recall, 0)}</b>
+            <span class="m-label">Wrong</span>${bar(b.false_match_rate, "this")}<b>${pct(b.false_match_rate)}</b>
+          </div></div>`).join("")}</div></div>
+      <p>The site uses the two rules with about ${pct(rule("clean name + state").false_match_rate, 0)}–${pct(rule("clean name + ZIP").false_match_rate, 0)} wrong links.
+        Cleaned names alone find more companies but ${pct(rule("clean name").false_match_rate, 0)} of their links are wrong, so they are not used.
+        The cost is that roughly a quarter of true links are missed: an employer with no linked case may still have one under
+        a different name or address.</p>
+      <p>The same rules find this share of WHD's visa-program violation cases among FY2025 filers (clean name + state):</p>
+      <div class="card"><div class="table-wrap"><table class="mini">
+        <thead><tr><th>WHD cases</th><th class="num">Cases</th><th class="num">Linked</th><th class="num">Cases since 2020</th><th class="num">Linked</th></tr></thead>
+        <tbody>${visaRates.map((r) => `<tr><td>${esc(r.cases)}</td><td class="num">${n(r.n_cases)}</td><td class="num">${pct(r.match_rate, 0)}</td>
+          <td class="num">${n(r.n_cases_2020plus)}</td><td class="num">${pct(r.match_rate_2020plus, 0)}</td></tr>`).join("")}</tbody>
+      </table></div></div>
+      <p class="note">Older cases link less often, most likely because many of those employers no longer file visa applications. A case that is not linked is
+        not counted anywhere on the site.</p>
+    </section>
+
+    <section class="method" id="m-numbers">
+      <h2 class="section">What the numbers mean</h2>
+      <ul>
+        <li><b>Back wages found:</b> WHD's back wages agreed to pay (<span class="mono">bw_atp_amt</span>), the money found owed to workers. Shown in green.</li>
+        <li><b>Penalties assessed:</b> civil money penalties (<span class="mono">cmp_assd</span>). Shown in red. Assessed is not the same as collected.</li>
+        <li><b>Violations</b> and <b>workers owed</b> are WHD's own counts per case. A case with 0 violations and $0 means WHD investigated and recorded none.</li>
+        <li><b>Visa-program violations</b> are H-1B violations for an H-1B employer, or H-2B violations for an H-2B employer. Other counts cover every law WHD enforces, such as minimum wage, overtime and child labor.</li>
+        <li><b>Willful violator</b> is the employer's own Yes/No answer on each application, not a DOL finding. It counts only when most of the employer's applications say Yes.</li>
+        <li><b>Debarment</b> is a DOL finding. Entries are matched to employers by cleaned name, and by state when DOL gives one; DOL's H-1B list has no addresses.</li>
+      </ul>
+    </section>
+
+    <section class="method" id="m-limits">
+      <h2 class="section">Limits</h2>
+      <ul>
+        <li>Filings are fiscal year 2025 only, so an employer that stopped filing earlier does not appear.</li>
+        <li>About ${pct(rule("clean name + ZIP").false_match_rate, 0)} of links are wrong and about a quarter of true links are missed. Check the WHD name and address on a case before relying on it.</li>
+        <li>WHD data covers concluded cases only. Open investigations are not public.</li>
+        <li>Some WHD dates are missing or mistyped in the source; they are shown as WHD published them.</li>
+        <li>Nothing on this site is evidence of a violation by itself. Rankings, flags and representative comparisons point to records worth reading.</li>
+      </ul>
+    </section>
+
+    <section class="method" id="m-check">
+      <h2 class="section">Checking a number</h2>
+      <p>Every number traces to a record ID: the DOL case number for an application (with a link to the DOL file it came from),
+        the WHD case ID and load date for a case, and the employer's own row. The <a href="/docs" target="_blank" rel="noopener">JSON API</a>
+        serves the same data, and the <a href="https://github.com/hartmanjd/visa-employers-watch" target="_blank" rel="noopener">source code</a>
+        includes the scripts that download, clean, match and benchmark it.</p>
+    </section>`;
+  app.querySelectorAll("[data-jump]").forEach((a) => a.addEventListener("click", (e) => {
+    e.preventDefault();
+    document.getElementById("m-" + a.dataset.jump).scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+  window.scrollTo(0, 0);
 }

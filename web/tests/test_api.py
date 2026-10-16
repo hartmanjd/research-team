@@ -116,6 +116,14 @@ class ApiTests(unittest.TestCase):
         self.assertTrue({"program", "entity", "status", "employers", "source_url"} <= set(rows[0]))
         self.assertIn("debarments", self.client.get(f"/api/employers/{self.acme_tx()['employer_id']}").json())
 
+    def test_methodology(self):
+        m = self.client.get("/api/methodology").json()
+        self.assertEqual({r["method"] for r in m["matches"]}, {"clean name + ZIP", "clean name + state"})
+        self.assertEqual(m["matched"]["cases"], 2)
+        self.assertEqual(sum(e["applications"] for e in m["employers"]), 5)
+        self.assertIn("clean name + ZIP", [b["rule"] for b in m["benchmark"]])
+        self.assertTrue(m["visa_case_match_rates"] and m["sources"] and m["debarments"])
+
     def test_mcp_address_is_published(self):
         mcp_url = "https://visa-employer-watch.onrender.com/mcp"
         self.assertIn(mcp_url, self.client.get("/").text)

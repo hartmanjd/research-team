@@ -192,6 +192,21 @@ def watchlist(program: str | None = None, state: str | None = None,
         c.close()
 
 
+@lru_cache(maxsize=1)
+def _methodology():
+    c = con()
+    try:
+        return q.methodology(c)
+    finally:
+        c.close()
+
+
+@app.get("/api/methodology")
+def methodology():
+    """Sources, date coverage, match counts and the matching benchmark quoted on the methodology page."""
+    return _methodology()
+
+
 # ---------- Ask: questions answered by Claude from the database ----------
 MAX_QUESTION = 600
 MAX_HISTORY = 6  # earlier messages sent back with a follow-up (three questions and their answers)
