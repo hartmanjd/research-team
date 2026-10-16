@@ -1,3 +1,6 @@
 pandas
 openpyxl
 streamlit
+fastapi
+uvicorn
+httpx
