@@ -123,6 +123,35 @@ class QueryTests(unittest.TestCase):
         self.assertEqual((t["cases"], t["back_wages"], t["penalties"]), (2, 1500.0, 250.0))
         self.assertEqual(queries.watchlist_totals(self.con, program="H-1B", since_year=2020)["cases"], 1)
 
+    def test_state_stats_count_each_case_once_per_state(self):
+        by = {r["state"]: r for r in queries.state_stats(self.con)}
+        self.assertEqual(sorted(by), ["CA", "NY", "TX"])
+        tx = by["TX"]
+        self.assertEqual((tx["employers"], tx["employers_with_cases"], tx["cases"]), (2, 2, 2))
+        self.assertEqual((tx["back_wages"], tx["share_with_cases"], tx["cases_per_100"]), (1500.0, 1.0, 100.0))
+        self.assertEqual(by["CA"]["cases"], 0)
+        h2b = {r["state"]: r for r in queries.state_stats(self.con, program="H-2B")}
+        self.assertEqual(list(h2b), ["TX"])
+        # Case 10 has H-1B violations only, so no H-2B employer keeps a case.
+        self.assertEqual(queries.state_stats(self.con, program="H-2B", visa_violations_only=True)[0]["cases"], 0)
+
+    def test_sector_stats_and_sector_filter(self):
+        rows = queries.sector_stats(self.con)
+        self.assertEqual([(r["sector"], r["name"], r["employers"], r["cases"]) for r in rows],
+                         [("11", "Agriculture, forestry, fishing and hunting", 4, 2)])
+        self.assertEqual([queries.sector_of(c) for c in ("1111", "336411", "452", "49", "", None)],
+                         ["11", "31-33", "44-45", "48-49", None, None])
+        self.assertEqual(len(queries.watchlist(self.con, sector="11")), 2)
+        self.assertEqual(queries.watchlist(self.con, sector="54"), [])
+        self.assertEqual(queries.watchlist_totals(self.con, sector="54")["cases"], 0)
+        with self.assertRaises(ValueError):
+            queries.watchlist(self.con, sector="99")
+
+    def test_case_years_total_each_year(self):
+        self.assertEqual([(y["year"], y["cases"], y["back_wages"])
+                          for y in queries.case_years(self.con, self.acme_tx()["employer_id"])],
+                         [(2019, 1, 1000.0), (2023, 1, 500.0)])
+
     def test_database_is_opened_read_only(self):
         with self.assertRaises(sqlite3.OperationalError):
             self.con.execute("DELETE FROM employers")
