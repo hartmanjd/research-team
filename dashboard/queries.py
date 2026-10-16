@@ -85,8 +85,17 @@ def find_application(con, text):
     return r[0] if r else None
 
 
-_RESULT_COLS = """e.employer_id, e.program, e.employer_name, e.dba, e.city, e.state, e.fein,
-               e.n_applications, e.willful_violator,
+# The willful violator answer is the employer's own Yes/No on each application, not a DOL finding.
+# employers.willful_violator is 1 when any application says Yes; WILLFUL_YES counts those answers
+# (computed only for flagged employers), and an employer counts as a willful violator when more
+# than half of its applications say Yes, so a single mistyped answer does not flag it.
+WILLFUL_YES = """(CASE WHEN e.willful_violator = 1 THEN (SELECT COUNT(*) FROM applications w
+                 WHERE w.employer_id = e.employer_id AND UPPER(w.willful_violator) = 'YES') ELSE 0 END)"""
+WILLFUL_COLS = f"""{WILLFUL_YES} AS willful_yes,
+               ({WILLFUL_YES}) * 2 > e.n_applications AS willful_violator"""
+
+_RESULT_COLS = f"""e.employer_id, e.program, e.employer_name, e.dba, e.city, e.state, e.fein,
+               e.n_applications, {WILLFUL_COLS},
                (SELECT COUNT(*) FROM matches m WHERE m.employer_id = e.employer_id) AS n_cases"""
 
 
@@ -120,10 +129,12 @@ def search_employers(con, text, limit=50):
 
 
 def employer(con, employer_id):
-    r = rows(con, """
-        SELECT e.*, s.file AS source_file, s.sha256 AS source_sha256, s.urls AS source_urls,
+    r = rows(con, f"""
+        SELECT e.*, {WILLFUL_YES} AS willful_yes, s.file AS source_file, s.sha256 AS source_sha256, s.urls AS source_urls,
                s.created_utc AS source_created_utc
         FROM employers e JOIN sources s USING (source_id) WHERE e.employer_id = ?""", employer_id)
+    for e in r:
+        e["willful_violator"] = int(e["willful_yes"] * 2 > e["n_applications"])
     return r[0] if r else None
 
 
@@ -431,7 +442,7 @@ def watchlist(con, program=None, since_year=None, visa_violations_only=False, mi
                                     sector)
     return rows(con, f"""
         SELECT e.employer_id, e.employer_name, e.dba, e.city, e.state, e.program, e.naics,
-               e.n_applications, e.n_certified, e.willful_violator, e.h1b_dependent,
+               e.n_applications, e.n_certified, {WILLFUL_COLS}, e.h1b_dependent,
                COUNT(*) AS n_cases,
                SUM(m.method = 'clean name + ZIP') AS zip_links,
                COALESCE(SUM(v.case_violtn_cnt), 0) AS violations,
@@ -469,8 +480,8 @@ def watchlist_totals(con, **filters):
 def overview(con, top=5, min_sector_employers=100):
     """Headline numbers and starting points for the lookup page.
 
-    `top_back_wages`: employers with the most back wages in linked WHD cases. `willful`: employers DOL
-    lists as willful violators that filed visa applications this year, most applications first.
+    `top_back_wages`: employers with the most back wages in linked WHD cases. `willful`: employers that
+    answered Yes to the willful violator question on most of their applications, most applications first.
     `sectors`: industries with at least `min_sector_employers` visa employers, by share with a case.
     """
     totals = rows(con, """
@@ -478,12 +489,14 @@ def overview(con, top=5, min_sector_employers=100):
                (SELECT COUNT(*) FROM applications) AS applications,
                (SELECT COUNT(DISTINCT employer_id) FROM matches) AS employers_with_cases""")[0]
     totals.update(watchlist_totals(con))
-    willful = rows(con, """
+    willful = [r for r in rows(con, f"""
         SELECT e.employer_id, e.employer_name, e.city, e.state, e.program, e.n_applications,
+               {WILLFUL_COLS},
                (SELECT COUNT(*) FROM matches m WHERE m.employer_id = e.employer_id) AS n_cases
         FROM employers e WHERE e.willful_violator = 1
-        ORDER BY e.n_applications DESC, e.employer_id LIMIT ?""", top)
-    n_willful = rows(con, "SELECT COUNT(*) AS n FROM employers WHERE willful_violator = 1")[0]["n"]
+        ORDER BY e.n_applications DESC, e.employer_id""") if r["willful_violator"]]
+    n_willful = len(willful)
+    willful = willful[:top]
     sectors = [r for r in sector_stats(con) if r["employers"] >= min_sector_employers]
     sectors.sort(key=lambda r: -r["share_with_cases"])
     return {"totals": totals, "top_back_wages": watchlist(con)[:top], "willful": willful,

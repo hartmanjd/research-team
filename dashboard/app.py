@@ -154,7 +154,7 @@ def employer_view(con, employer_id):
     st.title(e["employer_name"])
     flags = [e["program"]]
     if e["willful_violator"]:
-        flags.append("Willful violator (DOL flag)")
+        flags.append(f"Self-reported willful violator (Yes on {e['willful_yes']:,} of {e['n_applications']:,} applications)")
     if e["h1b_dependent"]:
         flags.append("H-1B dependent")
     st.markdown(f"{e['address']}, {e['city']}, {e['state']} {e['zip5']}  ·  "
