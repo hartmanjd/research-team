@@ -2,7 +2,7 @@
 
 Run from the repo root:  python3 -m unittest discover web/tests
 """
-import os, sys, tempfile, unittest
+import csv, io, os, sys, tempfile, unittest
 from unittest import mock
 
 from fastapi.testclient import TestClient
@@ -119,6 +119,45 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(rows)
         self.assertTrue({"program", "entity", "status", "employers", "source_url"} <= set(rows[0]))
         self.assertIn("debarments", self.client.get(f"/api/employers/{self.acme_tx()['employer_id']}").json())
+
+    def csv_rows(self, path, **params):
+        r = self.client.get(path, params=params)
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.headers["content-type"].startswith("text/csv"))
+        self.assertIn("attachment; filename=", r.headers["content-disposition"])
+        return r, list(csv.DictReader(io.StringIO(r.text)))
+
+    def test_watchlist_csv_keeps_filters_and_case_ids(self):
+        json_rows = self.client.get("/api/watchlist", params={"program": "H-1B"}).json()["rows"]
+        r, rows = self.csv_rows("/api/watchlist.csv", program="H-1B")
+        self.assertIn('filename="watchlist-H-1B.csv"', r.headers["content-disposition"])
+        self.assertEqual([int(x["employer_id"]) for x in rows], [x["employer_id"] for x in json_rows])
+        acme = self.acme_tx()["employer_id"]
+        row = next(x for x in rows if int(x["employer_id"]) == acme)
+        cases = self.client.get(f"/api/employers/{acme}").json()["cases"]
+        self.assertEqual(row["whd_case_ids"].split(";"), [str(v["case_id"]) for v in cases])
+        self.assertTrue(row["employer_page"].endswith(f"/#/employer/{acme}"))
+        _, since = self.csv_rows("/api/watchlist.csv", since=2020)
+        self.assertEqual([len(x["whd_case_ids"].split(";")) for x in since],
+                         [x["n_cases"] for x in self.client.get("/api/watchlist", params={"since": 2020}).json()["rows"]])
+        self.assertEqual(self.client.get("/api/watchlist.csv", params={"program": "H-9"}).status_code, 422)
+
+    def test_employer_csvs_carry_record_ids(self):
+        acme = self.acme_tx()["employer_id"]
+        _, apps = self.csv_rows(f"/api/employers/{acme}/applications.csv")
+        self.assertEqual(len(apps), self.client.get(f"/api/employers/{acme}/applications").json()["total"])
+        self.assertTrue(all(a["case_number"] and a["application_page"].endswith("/#/application/" + a["case_number"])
+                            for a in apps))
+        self.assertTrue(all(a["employer_id"] == str(acme) for a in apps))
+        _, cases = self.csv_rows(f"/api/employers/{acme}/cases.csv")
+        self.assertTrue(cases and all(c["case_id"] and c["load_dt"] and c["match_label"] for c in cases))
+        self.assertEqual(self.client.get("/api/employers/999999/cases.csv").status_code, 404)
+        self.assertEqual(self.client.get("/api/employers/999999/applications.csv").status_code, 404)
+
+    def test_debarments_csv(self):
+        _, rows = self.csv_rows("/api/debarments.csv")
+        self.assertEqual(len(rows), len(self.client.get("/api/debarments").json()))
+        self.assertTrue({"program", "entity", "status", "matched_employer_ids", "source_url"} <= set(rows[0]))
 
     def test_mcp_address_is_published(self):
         mcp_url = "https://visa-employer-watch.onrender.com/mcp"
