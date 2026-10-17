@@ -28,6 +28,7 @@ DATA_NOTES = """- Applications are FY2025 DOL disclosure records (LCA for H-1B, 
 - WHD cases cover every law WHD enforces (minimum wage, overtime, child labor, H-1B, H-2B, H-2A and others) and every year in the data, not only visa violations. Say "visa-program violations" only for h1b_violations on an H-1B employer or h2b_violations on an H-2B employer.
 - WHD records have no tax ID, so cases are linked to employers by cleaned name plus ZIP code or state. Some links are wrong (about 3 to 4 percent in a tax-ID test). When a single case drives your answer, mention that it is a name match.
 - A case with 0 violations and $0 back wages means WHD investigated and recorded no violations.
+- red_flags are patterns in the employer's own FY2025 applications (wages at the floor, mostly entry-level wage levels, many withdrawn or denied applications, most workers placed outside the home state). They are reasons for a closer look, not evidence of a violation; say so.
 - dol_debarments are entries on DOL's published debarment lists (H-1B, H-2A, H-2B, permanent labor certification) whose name, and state when DOL gives one, match the employer. Debarment is a DOL enforcement finding. The match is by name, so say it is a name match.
 - representatives are the law firms, agent businesses and individual attorneys or agents named on applications, grouped across every employer they file for (firms by cleaned name, people by name and state). times_typical compares how many of their clients have visa-program violations with what the same mix of H-1B and H-2B employers shows overall. Representing an employer does not make a firm responsible for its violations; say so.
 - willful_violator is the employer's own Yes/No answer on its applications, not a DOL finding. It counts only when most applications say Yes; willful_yes gives the count.
@@ -150,6 +151,8 @@ def get_employer(con, args):
         "top_jobs": [{k: j[k] for k in ("soc_title", "applications", "workers")} for j in profile["jobs"][:5]],
         "offered_vs_prevailing_wage": [b for b in profile["wage_bands"] if b["applications"]],
         "same_tax_id_elsewhere": q.same_tax_id(con, eid)[:10],
+        "red_flags": [{k: f[k] for k in ("title", "applications", "of", "baseline", "detail")}
+                      for f in q.red_flags(con, eid)],
         "dol_debarments": debarred,
         "representatives": [{k: r[k] for k in _REP_KEEP} for r in q.employer_representatives(con, eid)],
     }
