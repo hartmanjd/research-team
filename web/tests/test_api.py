@@ -110,6 +110,10 @@ class ApiTests(unittest.TestCase):
         self.assertIn("Visa Employer Watch", page.text)
         self.assertEqual(self.client.get("/app.js").status_code, 200)
 
+    def test_employer_red_flags(self):
+        d = self.client.get(f"/api/employers/{self.acme_tx()['employer_id']}").json()
+        self.assertEqual(d["red_flags"], [])  # too few applications to count
+
     def test_debarments(self):
         rows = self.client.get("/api/debarments").json()
         self.assertTrue(rows)

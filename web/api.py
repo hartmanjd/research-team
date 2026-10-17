@@ -26,6 +26,7 @@ SITE_URL = engine.SITE_URL
 @asynccontextmanager
 async def lifespan(app):
     q.download_db()  # no-op when the database is already there
+    threading.Thread(target=q.warm_red_flags, daemon=True).start()
     yield
 
 
@@ -126,6 +127,7 @@ def employer(employer_id: int):
         return {"employer": e, "summary": q.summary(c, employer_id),
                 "same_tax_id": q.same_tax_id(c, employer_id), "cases": cases,
                 "case_years": q.case_years(c, employer_id), "profile": q.employer_profile(c, employer_id),
+                "red_flags": q.red_flags(c, employer_id),
                 "debarments": q.employer_debarments(c, employer_id)}
     finally:
         c.close()

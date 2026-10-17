@@ -45,7 +45,7 @@ Settings (environment variables, all optional):
 | Address | Page |
 | --- | --- |
 | `#/` | Employer lookup: search by name, trade name (DBA) or tax ID, or open an application by its DOL case number. Before a search it shows a small map of cases per 100 visa employers, headline totals and three starting points: the employers with the most back wages, employers whose WHD cases found violations of their own visa program and that still filed in FY2025, and the industries with the highest share of employers with a case |
-| `#/employer/<id>` | One employer: DOL flags, totals, linked cases by year, same tax ID elsewhere, its jobs, worksites, offered against prevailing wages and representatives, each linked WHD case with its match rule and source, and its visa applications |
+| `#/employer/<id>` | One employer: DOL flags, totals, red flags in its own applications (each with its counts and the same share across the program), linked cases by year, same tax ID elsewhere, its jobs, worksites, offered against prevailing wages and representatives, each linked WHD case with its match rule and source, and its visa applications |
 | `#/application/<case number>` | One application: headline job, workers, wages and dates, then every field of its DOL disclosure record by section |
 | `#/watchlist` | Every employer with linked WHD cases, sortable, with filters (program, state, industry, year, visa violations, applications) kept in the address |
 | `#/map` | A tile map of states colored by cases per 100 visa employers, share with a case, back wages or case count, with top-state bars and a table |
