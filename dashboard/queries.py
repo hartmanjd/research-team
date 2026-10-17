@@ -31,8 +31,8 @@ DEBARMENTS_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", 
 
 # A gzipped copy of research.db published as a GitHub release asset, for hosts (like Render)
 # that only have the git checkout. The checksum is of the .gz file at that URL.
-DB_URL = "https://github.com/hartmanjd/research-team/releases/download/data-2026-10-17/research.db.gz"
-DB_SHA256 = "d521001549efd5ba8f60de8272d2b9c88d298b9d866f08643023c6136e91d948"
+DB_URL = "https://github.com/hartmanjd/visa-employers-watch/releases/download/data-2026-10-17b/research.db.gz"
+DB_SHA256 = "7f30c6f766a8c2c658881d471e3965391c977bd0e932c46bdd2ef678b3a3c0d3"
 
 
 def connect(path=None):
@@ -765,16 +765,23 @@ def warm_red_flags(path=None):
 def _flag_baselines(db_key):
     con = connect(db_key)
     try:
-        out = {}
-        for key, _, programs, num, den, *_ in RED_FLAGS:
-            for p in programs:
-                r = rows(con, f"""SELECT SUM(CASE WHEN {num} THEN 1 ELSE 0 END) AS k, COUNT(*) AS n
-                                  FROM applications a JOIN employers e USING (employer_id)
-                                  WHERE e.program = ? AND {den}""", p)[0]
-                out[(key, p)] = (r["k"] or 0) / r["n"] if r["n"] else None
-        return out
+        if _has_table(con, "flag_baselines"):
+            return {(r[0], r[1]): r[2] for r in con.execute("SELECT flag, program, share FROM flag_baselines")}
+        return _compute_flag_baselines(con)
     finally:
         con.close()
+
+
+def _compute_flag_baselines(con):
+    """{(flag, program): share of all the program's applications that meet the flag's condition}."""
+    out = {}
+    for key, _, programs, num, den, *_ in RED_FLAGS:
+        for p in programs:
+            r = rows(con, f"""SELECT SUM(CASE WHEN {num} THEN 1 ELSE 0 END) AS k, COUNT(*) AS n
+                              FROM applications a JOIN employers e USING (employer_id)
+                              WHERE e.program = ? AND {den}""", p)[0]
+            out[(key, p)] = (r["k"] or 0) / r["n"] if r["n"] else None
+    return out
 
 
 def red_flags(con, employer_id):
@@ -920,15 +927,8 @@ def _rep_index(db_key):
     try:
         reps = {k: {} for k in REP_KINDS}
         firm_keys = {}
-        have = {r[1] for r in con.execute("PRAGMA table_info(applications)")}
-        col = lambda c: f"a.{c}" if c in have else "''"  # the H-1B and H-2B files name these differently
-        either = lambda c1, c2: f"COALESCE(NULLIF({col(c1)}, ''), {col(c2)})"
-        for r in con.execute(f"""
-                SELECT a.employer_id, {col("lawfirm_name_business_name")}, {col("lawfirm_business_fein")},
-                       {either("agent_attorney_first_name", "attorney_agent_first_name")},
-                       {either("agent_attorney_last_name", "attorney_agent_last_name")},
-                       {either("agent_attorney_state", "attorney_agent_state")}, COUNT(*)
-                FROM applications a GROUP BY 1, 2, 3, 4, 5, 6"""):
+        source = "SELECT * FROM rep_filings" if _has_table(con, "rep_filings") else _rep_filings_sql(con)
+        for r in con.execute(source):
             eid, firm, ffein, first, last, st, n = r
             firm = (firm or "").strip()
             if firm:
@@ -952,6 +952,19 @@ def _rep_index(db_key):
         return {"reps": reps, "outcomes": outcomes, "programs": employers}
     finally:
         con.close()
+
+
+def _rep_filings_sql(con):
+    """Applications counted by employer, law firm, firm tax ID and attorney or agent name and state."""
+    have = {r[1] for r in con.execute("PRAGMA table_info(applications)")}
+    col = lambda c: f"a.{c}" if c in have else "''"  # the H-1B and H-2B files name these differently
+    either = lambda c1, c2: f"COALESCE(NULLIF({col(c1)}, ''), {col(c2)})"
+    return f"""
+        SELECT a.employer_id, {col("lawfirm_name_business_name")} AS firm, {col("lawfirm_business_fein")} AS firm_fein,
+               {either("agent_attorney_first_name", "attorney_agent_first_name")} AS first_name,
+               {either("agent_attorney_last_name", "attorney_agent_last_name")} AS last_name,
+               {either("agent_attorney_state", "attorney_agent_state")} AS state, COUNT(*) AS applications
+        FROM applications a GROUP BY 1, 2, 3, 4, 5, 6"""
 
 
 def _rep_add(group, key, name, employer_id, n=1, fein=None, firm=None):
@@ -1088,3 +1101,29 @@ def employer_representatives(con, employer_id):
             if employer_id in g["employers"]:
                 out.append(_rep_summary(kind, key, g, idx, debarred))
     return sorted(out, key=lambda r: (r["kind"] != "firm", -r["clients"]))
+
+
+# ---------- Summary tables ----------
+# Whole-table aggregates that take seconds of CPU (minutes on a small hosted instance) are stored in the
+# database when it is built, and read from there. A database without them still works: the same values
+# are then computed on first use.
+
+def _has_table(con, name):
+    return con.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)).fetchone() is not None
+
+
+def add_summaries(con):
+    """(Re)write the summary tables into a writable connection: `flag_baselines` (each red flag's share
+    across its program) and `rep_filings` (applications by employer and representative)."""
+    factory, con.row_factory = con.row_factory, sqlite3.Row
+    try:
+        baselines = _compute_flag_baselines(con)
+    finally:
+        con.row_factory = factory
+    con.execute("DROP TABLE IF EXISTS flag_baselines")
+    con.execute("CREATE TABLE flag_baselines (flag TEXT, program TEXT, share REAL, PRIMARY KEY (flag, program))")
+    con.executemany("INSERT INTO flag_baselines VALUES (?, ?, ?)", [(*k, v) for k, v in baselines.items()])
+    sql = _rep_filings_sql(con)
+    con.execute("DROP TABLE IF EXISTS rep_filings")
+    con.execute(f"CREATE TABLE rep_filings AS {sql}")
+    con.commit()

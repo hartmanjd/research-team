@@ -9,6 +9,8 @@ Tables:
   violation_cases  one row per WHD enforcement case
   matches          links a WHD case to an employer: how it was matched and the
                    rule's false-match rate on the tax-ID benchmark
+  flag_baselines,  summaries the website would otherwise compute at startup
+  rep_filings      (see add_summaries in dashboard/queries.py)
 
 Every input must have a manifest that still matches it (see provenance.py), and
 every row in the data tables carries the source_id of the file it came from.
@@ -26,6 +28,8 @@ from build_filers import applications_path
 from fetch_whd import FIELDS as WHD_FIELDS
 from employer_keys import clean_name, zip5
 from provenance import verify_manifest, write_manifest
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "dashboard"))
+from queries import add_summaries  # noqa: E402
 
 # Strongest first: a (case, employer) pair keeps the first rule that links it.
 MATCH_RULES = {"clean name + ZIP": ["name_clean", "zip5"],
@@ -201,6 +205,7 @@ def build(out, lca, h2b, whd_path, bench):
     m = match(whd, emp, false_rates)
     m.to_sql("matches", con, if_exists="append", index=False)
     con.commit()
+    add_summaries(con)  # the website's slow whole-table aggregates, so it does not compute them at startup
     counts = {t: con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
               for t in ["sources", "employers", "applications", "violation_cases", "matches"]}
     con.close()

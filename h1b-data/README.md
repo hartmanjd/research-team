@@ -46,6 +46,8 @@ A checksum is a fingerprint of the file: change one character and it changes. `p
 | applications | visa application | case_number, employer_id, case_status, visa_class, then every disclosure column (179 in all; H-2B-only columns are empty on H-1B rows and the other way round) |
 | violation_cases | WHD enforcement case | every column WHD publishes (110): case_id, names, address, industry, dates, totals, then violations, back wages, workers owed and penalties under each law (minimum wage and overtime, child labor and minors employed, FMLA, federal contracts, farmworker protections, H-1B, H-2A, H-2B and others), the FLSA repeat/willful flag, load_dt |
 | matches | WHD case linked to an employer | case_id, employer_id, method, est_false_match_rate, whd_name_field, employer_name_field |
+| flag_baselines | red flag per program | flag, program, share (the share of all the program's applications that meet the flag's condition; the employer page compares each employer with it) |
+| rep_filings | employer, law firm and attorney or agent combination | employer_id, firm, firm_fein, first_name, last_name, state, applications (the law firms and agents pages are built from it) |
 
 The applications table keeps the public disclosure record as DOL published it, including the employer's point of contact,
 the attorney or agent and law firm, and the preparer. Wages, prevailing wages, hours and worker counts are stored as
@@ -53,6 +55,8 @@ numbers; everything else (ZIPs, phone numbers, codes) is text. `n_certified` cou
 Withdrawn" and H-2B "Determination Issued - Certification" or "Partial Certification".
 
 WHD cases have no tax ID, so `matches` links them by cleaned name + ZIP, or failing that cleaned name + state, using the WHD trade or legal name against the employer's name or DBA. `est_false_match_rate` is that rule's false-match rate on the tax-ID benchmark (`name_match_benchmark.csv`).
+
+`flag_baselines` and `rep_filings` are summaries of the applications table that take the website several seconds of CPU to compute, so the build stores them (`add_summaries` in `dashboard/queries.py`). The website still works on a database without them, computing the same values on first use.
 
 ## Debarments
 
