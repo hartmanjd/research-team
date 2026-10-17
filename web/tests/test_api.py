@@ -184,7 +184,7 @@ class ApiTests(unittest.TestCase):
         self.assertTrue({"program", "entity", "status", "matched_employer_ids", "source_url"} <= set(rows[0]))
 
     def test_mcp_address_is_published(self):
-        mcp_url = "https://visa-employer-watch.onrender.com/mcp"
+        mcp_url = f"{api.SITE_URL}/mcp"
         self.assertIn(mcp_url, self.client.get("/").text)
         guide = self.client.get("/llms.txt")
         self.assertEqual(guide.status_code, 200)
@@ -192,6 +192,13 @@ class ApiTests(unittest.TestCase):
         self.assertIn(mcp_url, guide.text)
         for tool in self.client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).json()["result"]["tools"]:
             self.assertIn(f"`{tool['name']}`", guide.text)
+
+    def test_pages_name_the_address_the_site_runs_at(self):
+        with mock.patch.object(api, "SITE_URL", "https://someone-visa.hf.space"):
+            for path in ("/", "/llms.txt"):
+                text = self.client.get(path).text
+                self.assertIn("https://someone-visa.hf.space/mcp", text)
+                self.assertNotIn(api.engine.PUBLISHED_URL, text)
 
 
 if __name__ == "__main__":

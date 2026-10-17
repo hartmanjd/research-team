@@ -1,0 +1,49 @@
+# Copies the repo to the Hugging Face Space on every push to main; the Space then rebuilds the site
+# from the Dockerfile. Needs the HF_SPACE variable (owner/space-name) and the HF_TOKEN secret (a
+# Hugging Face access token with write access) in the repo's Actions settings.
+name: Deploy to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: ${{ vars.HF_SPACE != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install huggingface_hub
+      - name: Upload to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          # The Space reads its settings from the front matter of its README.
+          cat > README.md <<'README'
+          ---
+          title: Visa Employer Watch
+          emoji: 🔎
+          colorFrom: blue
+          colorTo: green
+          sdk: docker
+          app_port: 7860
+          pinned: false
+          ---
+
+          H-1B and H-2B employers and their Wage and Hour Division enforcement cases.
+          Source: https://github.com/hartmanjd/visa-employers-watch
+          README
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+          HfApi(token=os.environ["HF_TOKEN"]).upload_folder(
+              repo_id=os.environ["HF_SPACE"], repo_type="space", folder_path=".",
+              ignore_patterns=[".git/*", ".github/*"], delete_patterns=["*"],
+              commit_message=f"Deploy {os.environ['COMMIT'][:7]}")
+          PY

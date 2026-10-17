@@ -425,4 +425,21 @@ def ask(body: dict, request: Request):
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
+def _page(name, media_type):
+    """A static page with the published address swapped for the one this server runs at."""
+    with open(os.path.join(HERE, "static", name), encoding="utf-8") as f:
+        return Response(f.read().replace(engine.PUBLISHED_URL, SITE_URL), media_type=media_type)
+
+
+@app.get("/", include_in_schema=False)
+@app.get("/index.html", include_in_schema=False)
+def index():
+    return _page("index.html", "text/html")
+
+
+@app.get("/llms.txt", include_in_schema=False)
+def llms_txt():
+    return _page("llms.txt", "text/plain")
+
+
 app.mount("/", StaticFiles(directory=os.path.join(HERE, "static"), html=True), name="static")

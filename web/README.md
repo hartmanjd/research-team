@@ -95,6 +95,24 @@ FastAPI also serves interactive API docs at http://localhost:8000/docs.
 without visitors, so the first visit after that takes 30 to 60 seconds while it wakes and downloads the
 database.
 
+The site can also run as a [Hugging Face Space](https://huggingface.co/spaces), whose free CPU tier
+has 2 CPUs and 16 GB of memory and sleeps after 48 hours without visitors. The `Dockerfile` at the repo
+root describes the container; it downloads the database while building, so the site starts in seconds.
+`.github/workflows/hf-space.yml` copies the repo to the Space on every push to `main`, and the Space
+rebuilds. To set it up:
+
+1. On huggingface.co, create a Space with the **Docker** SDK (Blank template) and the free
+   **CPU basic** hardware.
+2. Under **Settings > Access Tokens**, create a token with write access.
+3. In this GitHub repo, open **Settings > Secrets and variables > Actions**. Add the token as the secret
+   `HF_TOKEN`, and on the **Variables** tab add `HF_SPACE` set to the Space's name, such as
+   `hartmanjd/visa-employer-watch`.
+4. Run **Actions > Deploy to Hugging Face Space > Run workflow** once, or merge to `main`.
+
+Links in the site, `llms.txt`, CSV downloads and the chat use the Space's own address, which Hugging
+Face passes in as `SPACE_HOST`; set `SITE_URL` to override it. For the Ask page, add `ANTHROPIC_API_KEY`
+as a secret in the Space's **Settings > Variables and secrets**.
+
 ## Ask page
 
 The Ask page stays switched off until the server has an Anthropic API key. To switch it on in Render:

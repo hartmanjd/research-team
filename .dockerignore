@@ -1,0 +1,7 @@
+.git
+.github
+**/__pycache__
+**/tests
+h1b-data/*.db
+h1b-data/*.db.gz
+h1b-data/raw
