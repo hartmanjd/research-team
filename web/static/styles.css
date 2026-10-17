@@ -466,6 +466,25 @@ a.cite:hover { text-decoration: none; outline: 1px solid var(--accent); }
 }
 .composer [hidden] { display: none; }
 
+/* Methodology page */
+.toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 4px; }
+.toc a { font-size: 13px; padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); text-decoration: none; background: var(--surface); }
+.toc a:hover { border-color: var(--accent); color: var(--accent); }
+.method { scroll-margin-top: 90px; }
+.method > p, .method > ul, .method > ol { max-width: 780px; line-height: 1.6; color: var(--ink-2); }
+.method li { margin: 6px 0; }
+.method .card { margin: 12px 0; }
+.bench { display: grid; gap: 14px; }
+.bench-row { display: grid; grid-template-columns: 200px 1fr; gap: 16px; align-items: center; }
+.bench-row.used .bench-name { font-weight: 600; }
+.m-bars { display: grid; grid-template-columns: 52px 1fr 52px; gap: 6px 10px; align-items: center; font-size: 13px; }
+.m-label { color: var(--ink-3); }
+.m-track { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.m-fill { display: block; height: 100%; border-radius: 999px; }
+.m-fill.all { background: var(--accent); }
+.m-fill.this { background: var(--bad); }
+@media (max-width: 640px) { .bench-row { grid-template-columns: 1fr; gap: 6px; } }
+
 /* CSV download links */
 a.csv-link { color: var(--ink-2); text-decoration: none; }
 h2.section .csv-link, .chip-row .csv-link { margin-left: auto; padding: 5px 12px; font-size: 13px; align-self: center; }

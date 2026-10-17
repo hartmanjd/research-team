@@ -30,6 +30,7 @@ AI tools can query the data through a read-only MCP server. No account or key is
 - Employer: https://visa-employer-watch.onrender.com/#/employer/<employer_id>
 - Application: https://visa-employer-watch.onrender.com/#/application/<case_number>
 - Watchlist: https://visa-employer-watch.onrender.com/#/watchlist
+- Methodology (sources, how WHD cases are linked, error rates, limits): https://visa-employer-watch.onrender.com/#/methodology
 - DOL debarments, matched to filers: https://visa-employer-watch.onrender.com/#/debarments
 
 ## JSON API

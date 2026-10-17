@@ -195,6 +195,21 @@ def watchlist(program: str | None = None, state: str | None = None,
         c.close()
 
 
+@lru_cache(maxsize=1)
+def _methodology():
+    c = con()
+    try:
+        return q.methodology(c)
+    finally:
+        c.close()
+
+
+@app.get("/api/methodology")
+def methodology():
+    """Sources, date coverage, match counts and the matching benchmark quoted on the methodology page."""
+    return _methodology()
+
+
 # ---------- CSV downloads ----------
 # Each row keeps the record IDs it came from (employer ID, DOL case number, WHD case ID) and a link to
 # the site page that shows it, so a spreadsheet can be traced back to the source records.
