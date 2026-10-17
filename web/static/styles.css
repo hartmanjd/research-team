@@ -466,6 +466,10 @@ a.cite:hover { text-decoration: none; outline: 1px solid var(--accent); }
 }
 .composer [hidden] { display: none; }
 
+/* CSV download links */
+a.csv-link { color: var(--ink-2); text-decoration: none; }
+h2.section .csv-link, .chip-row .csv-link { margin-left: auto; padding: 5px 12px; font-size: 13px; align-self: center; }
+
 /* ---------- red flags ---------- */
 .rf { border-left: 4px solid var(--warn); }
 .rf-list { display: grid; gap: 14px; }

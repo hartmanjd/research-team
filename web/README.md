@@ -77,6 +77,10 @@ that lists the MCP address, its tools, what the data means and which pages to ci
 | `GET /api/debarments` | Every DOL debarment entry with its status and matching visa employers. The employer endpoint also returns the entries matching that employer, with its applications decided inside each debarment period |
 | `GET /api/representatives?kind=&program=&q=&sort=&min_clients=` | Law firms and agent businesses (`kind=firm`) or attorneys and agents (`kind=person`) across all the employers they file for: clients, clients with WHD cases, clients with visa-program violations against the rate for the same mix of programs, debarred clients and back wages |
 | `GET /api/representatives/{kind}/{key}` | One representative: name variants, tax IDs, firms on the form (for a person) and every client employer with its WHD record. The employer endpoint also returns `representatives`, the firms and people on its applications |
+| `GET /api/watchlist.csv?…` | The Watchlist as CSV with the same filters, each employer with the WHD case IDs behind its row and a link to its page |
+| `GET /api/employers/{id}/applications.csv` | All of an employer's applications as CSV: DOL case number, job, wages, worksite, law firm, source file and a link to each application page |
+| `GET /api/employers/{id}/cases.csv` | An employer's linked WHD cases as CSV, with WHD's field names, load date, match rule and error rate, and source file |
+| `GET /api/debarments.csv` | Every DOL debarment entry as CSV, with the IDs of matching employers |
 | `GET /api/meta` | States, NAICS sector names and the source files behind the database |
 | `POST /mcp` | The chat's eight lookups as a read-only MCP server (see `chat/README.md` for connecting Claude Desktop) |
 | `GET /api/ask` | Whether the Ask page can take questions (`enabled`, or the `reason` it can't) |
