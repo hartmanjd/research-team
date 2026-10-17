@@ -9,7 +9,10 @@ import json, os, re
 from .tools import DATA_NOTES, TOOLS, run_tool
 
 MODEL = os.environ.get("CHAT_MODEL", "claude-haiku-5-5")
-SITE_URL = os.environ.get("SITE_URL", "https://visa-employer-watch.onrender.com").rstrip("/")
+# The address the site is published at. Hugging Face Spaces set SPACE_HOST to the Space's own address.
+PUBLISHED_URL = "https://visa-employer-watch.onrender.com"
+SITE_URL = (os.environ.get("SITE_URL")
+            or (f"https://{os.environ['SPACE_HOST']}" if os.environ.get("SPACE_HOST") else PUBLISHED_URL)).rstrip("/")
 MAX_TOOL_ROUNDS = 8
 MAX_TOKENS = 8000
 # US dollars per million tokens (Haiku 5.5 for prompts up to 100K tokens). Cache writes cost 1.25x
