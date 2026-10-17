@@ -20,7 +20,7 @@ AI tools can query the data through a read-only MCP server. No account or key is
 
 ## What the data means
 
-- WHD cases cover every law WHD enforces (minimum wage, overtime, child labor, H-1B, H-2B and others), not only visa violations.
+- WHD cases cover every law WHD enforces (minimum wage, overtime, child labor, H-1B, H-2B and others), not only visa violations. `get_employer` lists, for each case, the laws violated with violations, back wages, workers owed and penalties under each; WHD publishes counts, not a description of what happened.
 - WHD records have no tax ID, so cases are linked to employers by cleaned name plus ZIP code or state. About 3 to 4 percent of links are wrong in a tax-ID test.
 - `get_employer` includes any matching entry on DOL's published debarment lists. Debarment is a DOL finding; the match to the employer is by name (and state when DOL gives one).
 - The willful violator field is the employer's own Yes/No answer on its applications, not a DOL finding.

@@ -72,6 +72,12 @@ class BuildDbTests(unittest.TestCase):
     def q(self, sql, *args):
         return self.con.execute(sql, args).fetchall()
 
+    def test_violation_cases_keep_every_whd_column_with_its_type(self):
+        cols = {r[1]: r[2] for r in self.q("PRAGMA table_info(violation_cases)")}
+        self.assertEqual(list(cols), fetch_whd.FIELDS + ["source_id"])
+        self.assertEqual((cols["flsa_cl_violtn_cnt"], cols["fmla_bw_atp_amt"], cols["flsa_repeat_violator"]),
+                         ("INTEGER", "REAL", "TEXT"))
+
     def test_every_application_links_to_its_employer(self):
         rows = self.q("SELECT a.case_number, e.program, e.name_clean, e.state FROM applications a"
                       " JOIN employers e USING (employer_id) ORDER BY a.case_number")

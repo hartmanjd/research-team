@@ -281,11 +281,41 @@ async function employerPage(id) {
   loadApplications(id, 1);
 }
 
+const plural = (k, one, many) => `${n(k)} ${k === 1 ? one : many}`;
+
+// What a WHD case found, law by law, from the API's laws and details lists.
+function lawBreakdown(v) {
+  const d = v.details;
+  const total = Number(v.case_violtn_cnt || 0);
+  const stats = (r) => [
+    r.violations ? `<span><b>${n(r.violations)}</b> ${r.violations === 1 ? "violation" : "violations"}</span>` : "",
+    r.back_wages ? `<span class="good-text"><b>${money(r.back_wages)}</b> back wages</span>` : "",
+    r.workers ? `<span><b>${n(r.workers)}</b> ${r.workers === 1 ? "worker" : "workers"} owed</span>` : "",
+    r.penalties ? `<span class="bad-text"><b>${money(r.penalties)}</b> penalties</span>` : "",
+  ].join("");
+  const notes = [
+    d.repeat_violator ? `<span class="badge danger">${esc(d.repeat_violator)} violator (FLSA)</span>` : "",
+    d.child_labor_minors ? `<span class="badge warn">${plural(d.child_labor_minors, "minor", "minors")} employed in violation</span>` : "",
+    d.minimum_wage_back_wages ? `<span class="badge">${money(d.minimum_wage_back_wages)} minimum wage back wages</span>` : "",
+    d.overtime_back_wages ? `<span class="badge">${money(d.overtime_back_wages)} overtime back wages</span>` : "",
+    d.retaliation_back_wages ? `<span class="badge">${money(d.retaliation_back_wages)} for retaliation</span>` : "",
+  ].join("");
+  const empty = total ? "WHD did not record which law these violations fall under."
+    : "WHD investigated and recorded no violations.";
+  return `
+      <div class="laws">
+        <div class="laws-head"><span class="mini-h">What WHD found</span>
+          <span class="meta">${plural(total, "violation", "violations")} in all${v.ee_violtd_cnt ? ` · ${plural(v.ee_violtd_cnt, "worker", "workers")} affected` : ""}</span></div>
+        ${v.laws.length ? v.laws.map((r) => `
+        <div class="law"><div class="law-name">${esc(r.name)}</div><div class="law-stats">${stats(r)}</div></div>`).join("")
+          : `<div class="law empty">${empty}</div>`}
+        ${notes ? `<div class="law-notes">${notes}</div>` : ""}
+      </div>`;
+}
+
 function caseCard(v) {
   const zip = v.method === "clean name + ZIP";
   const bw = Number(v.bw_atp_amt || 0);
-  const row = (law, cnt, wages, workers) =>
-    `<tr><td>${law}</td><td class="num">${n(cnt)}</td><td class="num">${wages == null ? "" : money(wages)}</td><td class="num">${workers == null ? "" : n(workers)}</td></tr>`;
   return `
   <details class="card case">
     <summary>
@@ -306,16 +336,9 @@ function caseCard(v) {
         <dt>WHD trade name</dt><dd>${esc(v.trade_nm || "–")}</dd>
         <dt>WHD address</dt><dd>${esc(v.street_addr_1_txt)}, ${esc(v.cty_nm)}, ${esc(v.st_cd)} ${esc(v.zip_cd)}</dd>
         <dt>Penalties assessed</dt><dd class="${v.cmp_assd ? "bad-text" : ""}">${money(v.cmp_assd)}</dd>
+        ${v.details.industry ? `<dt>WHD industry</dt><dd>${esc(v.details.industry)}</dd>` : ""}
       </dl>
-      <div class="table-wrap"><table class="mini">
-        <thead><tr><th>Law</th><th class="num">Violations</th><th class="num">Back wages</th><th class="num">Workers</th></tr></thead>
-        <tbody>
-          ${row("All laws", v.case_violtn_cnt, v.bw_atp_amt || 0, v.ee_violtd_cnt)}
-          ${row("H-1B", v.h1b_violtn_cnt, v.h1b_bw_atp_amt || 0, null)}
-          ${row("H-2B", v.h2b_violtn_cnt, v.h2b_bw_atp_amt || 0, null)}
-          ${row("H-2A", v.h2a_violtn_cnt, null, null)}
-          ${row("Minimum wage / overtime (FLSA)", v.flsa_violtn_cnt, null, null)}
-        </tbody></table></div>
+      ${lawBreakdown(v)}
       <div class="match"><span class="badge ${zip ? "ok" : "warn"}">${zip ? "Name + ZIP" : "Name + state"}</span>
         <div>${esc(v.match_label)}. Compared the WHD ${esc(v.whd_name_field)} with the employer ${esc(v.employer_name_field)}.</div></div>
       <div class="source">Source: WHD enforcement API <a href="${esc(v.source_urls)}" target="_blank" rel="noopener">${esc(v.source_urls)}</a>,

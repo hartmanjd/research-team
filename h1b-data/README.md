@@ -15,7 +15,7 @@ The employer and application tables (`filers_*`), the database (`research.db`) a
 | scripts/xlsx_to_csv.py | Streams a DOL disclosure workbook to CSV, skipping blank padding rows |
 | scripts/build_filers.py | Turns the disclosure CSVs into the employer and application tables; a case number seen in several quarters is kept once, with its latest record. Column names that differ between files (`H-1B_DEPENDENT` and `H_1B_DEPENDENT`) are read as one |
 | scripts/name_match_benchmark.py | Produces name_match_benchmark.csv |
-| scripts/fetch_whd.py | Downloads WHD enforcement data (key from env var DOL_API_KEY, sent in the URL). 2,000 rows a page, backs off on rate limits, re-run with the same output file to resume |
+| scripts/fetch_whd.py | Downloads every column of the WHD enforcement table (key from env var DOL_API_KEY, sent in the URL). 1,000 rows a page, backs off on rate limits, re-run with the same output file to resume |
 | scripts/match_whd.py | Match rates of WHD H-1B/H-2B violation cases to filers |
 | scripts/build_db.py | Builds `research.db` (SQLite) from the tables above; see Database |
 | research.db (not in git) | The database |
@@ -44,7 +44,7 @@ A checksum is a fingerprint of the file: change one character and it changes. `p
 | sources | input file | file, sha256, rows, urls, created_utc, manifest |
 | employers | employer per program (H-1B or H-2B) | employer_id, program, name_clean, state, zip5, address, phone, fein, n_applications, n_certified, h1b_dependent, willful_violator (1 when any application answers Yes to the willful violator question; the dashboard flags an employer only when most do) |
 | applications | visa application | case_number, employer_id, case_status, visa_class, then every disclosure column (179 in all; H-2B-only columns are empty on H-1B rows and the other way round) |
-| violation_cases | WHD enforcement case | case_id, names, address, dates, back wages, fines, violation counts by law, load_dt |
+| violation_cases | WHD enforcement case | every column WHD publishes (110): case_id, names, address, industry, dates, totals, then violations, back wages, workers owed and penalties under each law (minimum wage and overtime, child labor and minors employed, FMLA, federal contracts, farmworker protections, H-1B, H-2A, H-2B and others), the FLSA repeat/willful flag, load_dt |
 | matches | WHD case linked to an employer | case_id, employer_id, method, est_false_match_rate, whd_name_field, employer_name_field |
 
 The applications table keeps the public disclosure record as DOL published it, including the employer's point of contact,
@@ -83,7 +83,7 @@ workbook's URL as a `--source-url` so the website can link every application to 
         --source-url https://www.dol.gov/sites/dolgov/files/ETA/oflc/pdfs/LCA_Disclosure_Data_FY2025_Q1.xlsx ...
     python3 scripts/build_filers.py filers_h2b_fy2025.csv H2B_FY2025.csv --source-url ...
 
-To re-run the WHD match (raw download about 70 MB and 25 minutes; key in env var DOL_API_KEY):
+To re-run the WHD match (raw download about 180 MB and 45 to 80 minutes, depending on DOL's rate limits; key in env var DOL_API_KEY):
 
     python3 scripts/fetch_whd.py /tmp/whd.csv
     python3 scripts/match_whd.py /tmp/whd.csv filers_lca_fy2025.csv filers_h2b_fy2025.csv .

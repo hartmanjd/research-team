@@ -36,7 +36,10 @@ def make_db(d):
     old = whd_case(10, "Acme Software", "", "TX", "78701", h1b=2)
     old.update(findings_end_date="2019-05-01", bw_atp_amt="1000", cmp_assd="250")
     new = whd_case(11, "", "Acme Software LLC", "TX", "73301")  # same state, other ZIP
-    new.update(findings_end_date="2023-02-01", bw_atp_amt="500", cmp_assd="0")
+    new.update(findings_end_date="2023-02-01", bw_atp_amt="500", cmp_assd="0", case_violtn_cnt="3",
+               flsa_violtn_cnt="2", flsa_bw_atp_amt="500", flsa_ee_atp_cnt="4", flsa_ot_bw_atp_amt="500",
+               flsa_cl_violtn_cnt="1", flsa_cl_minor_cnt="1", flsa_cl_cmp_assd_amt="0",
+               flsa_repeat_violator="R", naics_code_description="Software Publishers")
     write_csv(p("whd.csv"), [old, new, whd_case(12, "Zeta", "Zeta", "WA", "98101")],
               fields=fetch_whd.FIELDS)
     provenance.write_manifest(p("whd.csv"), fetch_whd.__file__, sources=[{"url": fetch_whd.URL}])
@@ -120,6 +123,23 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(queries.match_label(cs[0]["method"], cs[0]["est_false_match_rate"]),
                          "Matched by clean name + state; about 3% of links made this way were wrong "
                          "in the tax-ID test")
+
+    def test_cases_list_each_law_violated_with_plain_names(self):
+        new, old = queries.cases(self.con, self.acme_tx()["employer_id"])
+        self.assertEqual(new["laws"], [
+            {"law": "flsa", "name": "Minimum wage and overtime (FLSA)", "violations": 2, "back_wages": 500.0,
+             "workers": 4, "penalties": 0},
+            {"law": "flsa_cl", "name": "Child labor (FLSA)", "violations": 1, "back_wages": 0, "workers": 0,
+             "penalties": 0}])
+        self.assertEqual(new["details"], {"minimum_wage_back_wages": 0, "overtime_back_wages": 500.0,
+                                          "retaliation_back_wages": 0, "child_labor_minors": 1,
+                                          "repeat_violator": "Repeat", "industry": "Software Publishers"})
+        self.assertEqual([r["law"] for r in old["laws"]], ["h1b"])
+
+    def test_every_law_in_the_whd_data_is_named(self):
+        counts = [c for c in fetch_whd.FIELDS if c.endswith("_violtn_cnt") and c != "case_violtn_cnt"]
+        laws = queries.case_laws({c: 1 for c in counts})
+        self.assertEqual(len(laws), len(counts))
 
     def test_applications_link_back_to_the_dol_file(self):
         apps = queries.applications(self.con, self.acme_tx()["employer_id"])
@@ -275,6 +295,16 @@ class DownloadTests(unittest.TestCase):
     def test_an_older_layout_is_replaced(self):
         con = sqlite3.connect(self.target)
         con.execute("CREATE TABLE applications (case_number TEXT, case_status TEXT)")
+        con.commit()
+        con.close()
+        queries.download_db(self.target, self.url, self.sha)
+        con = queries.connect(self.target)
+        self.assertIsNotNone(queries.application(con, "I-1"))
+
+    def test_a_database_without_the_full_whd_columns_is_replaced(self):
+        con = sqlite3.connect(self.target)
+        con.execute("CREATE TABLE applications (case_number TEXT, job_title TEXT)")
+        con.execute("CREATE TABLE violation_cases (case_id INTEGER, h1b_violtn_cnt INTEGER)")
         con.commit()
         con.close()
         queries.download_db(self.target, self.url, self.sha)
