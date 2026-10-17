@@ -14,8 +14,8 @@ DEBARMENTS_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", 
 
 # A gzipped copy of research.db published as a GitHub release asset, for hosts (like Render)
 # that only have the git checkout. The checksum is of the .gz file at that URL.
-DB_URL = "https://github.com/hartmanjd/research-team/releases/download/data-2026-10-16/research.db.gz"
-DB_SHA256 = "1d71bef037e6184b9ed319c2381ee61869084169a45f397d1bdb391ef876a26c"
+DB_URL = "https://github.com/hartmanjd/research-team/releases/download/data-2026-10-17/research.db.gz"
+DB_SHA256 = "d521001549efd5ba8f60de8272d2b9c88d298b9d866f08643023c6136e91d948"
 
 
 def connect(path=None):
@@ -30,21 +30,22 @@ def connect(path=None):
 
 
 def _older_layout(path):
-    """True for a database whose applications table predates the full disclosure columns."""
+    """True for a database that predates the full disclosure columns or the full WHD columns."""
     try:
         con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         try:
             cols = {r[1] for r in con.execute("PRAGMA table_info(applications)")}
+            whd = {r[1] for r in con.execute("PRAGMA table_info(violation_cases)")}
         finally:
             con.close()
     except sqlite3.DatabaseError:
         return False
-    return bool(cols) and "job_title" not in cols
+    return bool(cols) and ("job_title" not in cols or "flsa_cl_violtn_cnt" not in whd)
 
 
 def download_db(path=None, url=None, sha256=None):
     """Download the gzipped database to `path` if it is not there yet (or is an older layout
-    without the full application columns), and return the path.
+    without the full application or WHD columns), and return the path.
 
     The download is checked against its SHA-256 before it is unpacked, and written under a
     temporary name first, so a failed or wrong download never leaves a database behind.
@@ -170,18 +171,86 @@ def summary(con, employer_id):
         WHERE m.employer_id = ?""", employer_id, employer_id, employer_id)[0]
 
 
+# Laws WHD enforces, as (column prefix, plain name). Each has a ..._violtn_cnt column, and most have
+# back wages (..._bw_atp_amt), workers owed (..._ee_atp_cnt) and penalties (..._cmp_assd_amt) columns.
+LAWS = [
+    ("flsa", "Minimum wage and overtime (FLSA)"),
+    ("flsa_cl", "Child labor (FLSA)"),
+    ("h1b", "H-1B visa program"),
+    ("h2b", "H-2B visa program"),
+    ("h2a", "H-2A farmworker visa program"),
+    ("h1a", "H-1A visa program (registered nurses)"),
+    ("crew", "Longshore work by foreign crew members (D-1)"),
+    ("sraw", "Special and replenishment agricultural workers"),
+    ("mspa", "Migrant and seasonal farmworker protections (MSPA)"),
+    ("osha", "Farmworker field sanitation and housing (OSHA)"),
+    ("fmla", "Family and medical leave (FMLA)"),
+    ("sca", "Federal service contracts (Service Contract Act)"),
+    ("dbra", "Federal construction prevailing wages (Davis-Bacon)"),
+    ("cwhssa", "Federal contract overtime (CWHSSA)"),
+    ("ca", "Kickbacks on federal construction (Copeland Act)"),
+    ("pca", "Federal supply contracts (Walsh-Healey Public Contracts Act)"),
+    ("eppa", "Lie detector tests (Employee Polygraph Protection Act)"),
+    ("ccpa", "Wage garnishment limits (CCPA)"),
+    ("flsa_smw14", "Special minimum wage for workers with disabilities (FLSA 14(c))"),
+    ("flsa_smwpw", "Special minimum wage for patient workers (FLSA)"),
+    ("flsa_smwap", "Special minimum wage for apprentices (FLSA)"),
+    ("flsa_smwft", "Special minimum wage for full-time students (FLSA)"),
+    ("flsa_smwl", "Special minimum wage for learners (FLSA)"),
+    ("flsa_smwmg", "Special minimum wage for messengers (FLSA)"),
+    ("flsa_smwsl", "Special minimum wage for student learners (FLSA)"),
+    ("flsa_hmwkr", "Industrial homework (FLSA)"),
+    ("eev", "Other (DOL code EEV)"),
+]
+# A few WHD columns break the naming pattern.
+_LAW_COLS = {"flsa_smw14": {"back_wages": "flsa_smw14_bw_amt"},
+             "cwhssa": {"back_wages": "cwhssa_bw_amt", "workers": "cwhssa_ee_cnt"},
+             "eppa": {"workers": "eppa_ee_cnt"}}
+REPEAT_VIOLATOR = {"R": "Repeat", "W": "Willful", "RW": "Repeat and willful"}
+
+
+def _num(v):
+    return v if isinstance(v, (int, float)) else 0
+
+
+def case_laws(v):
+    """The laws a WHD case found violations under (or owed back wages or penalties under), each with
+    its plain name, violations, back wages, workers owed and penalties; missing columns count as 0."""
+    out = []
+    for prefix, name in LAWS:
+        cols = {"violations": f"{prefix}_violtn_cnt", "back_wages": f"{prefix}_bw_atp_amt",
+                "workers": f"{prefix}_ee_atp_cnt", "penalties": f"{prefix}_cmp_assd_amt",
+                **_LAW_COLS.get(prefix, {})}
+        row = {k: _num(v.get(c)) for k, c in cols.items()}
+        if any(row.values()):
+            out.append({"law": prefix, "name": name, **row})
+    return out
+
+
+def case_details(v):
+    """Detail WHD gives beyond the per-law counts: the FLSA back wages split, minors employed in
+    violation of child labor rules, and whether WHD marked the employer a repeat or willful violator."""
+    return {"minimum_wage_back_wages": _num(v.get("flsa_mw_bw_atp_amt")),
+            "overtime_back_wages": _num(v.get("flsa_ot_bw_atp_amt")),
+            "retaliation_back_wages": _num(v.get("flsa_15a3_bw_atp_amt")),
+            "child_labor_minors": _num(v.get("flsa_cl_minor_cnt")),
+            "repeat_violator": REPEAT_VIOLATOR.get((v.get("flsa_repeat_violator") or "").strip().upper()),
+            "industry": v.get("naics_code_description") or None}
+
+
 def cases(con, employer_id):
-    """WHD cases linked to this employer, newest first, with how each link was made."""
-    return rows(con, """
-        SELECT v.case_id, v.trade_nm, v.legal_name, v.street_addr_1_txt, v.cty_nm, v.st_cd, v.zip_cd,
-               v.findings_start_date, v.findings_end_date, v.case_violtn_cnt, v.bw_atp_amt,
-               v.ee_violtd_cnt, v.cmp_assd, v.h1b_violtn_cnt, v.h1b_bw_atp_amt, v.h2b_violtn_cnt,
-               v.h2b_bw_atp_amt, v.h2a_violtn_cnt, v.flsa_violtn_cnt, v.load_dt,
-               m.method, m.est_false_match_rate, m.whd_name_field, m.employer_name_field,
+    """WHD cases linked to this employer, newest first, with how each link was made, every WHD
+    column, the laws it found violations under (laws) and the extra detail WHD gives (details)."""
+    out = rows(con, """
+        SELECT v.*, m.method, m.est_false_match_rate, m.whd_name_field, m.employer_name_field,
                s.file AS source_file, s.sha256 AS source_sha256, s.urls AS source_urls
         FROM matches m JOIN violation_cases v USING (case_id) JOIN sources s ON s.source_id = v.source_id
         WHERE m.employer_id = ?
         ORDER BY v.findings_end_date DESC, v.case_id DESC""", employer_id)
+    for v in out:
+        v["laws"] = case_laws(v)
+        v["details"] = case_details(v)
+    return out
 
 
 # Columns that hold the same thing under different names in the H-1B (LCA) and H-2B files.

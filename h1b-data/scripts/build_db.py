@@ -23,12 +23,24 @@ import argparse, json, os, sqlite3, sys
 import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from build_filers import applications_path
+from fetch_whd import FIELDS as WHD_FIELDS
 from employer_keys import clean_name, zip5
 from provenance import verify_manifest, write_manifest
 
 # Strongest first: a (case, employer) pair keeps the first rule that links it.
 MATCH_RULES = {"clean name + ZIP": ["name_clean", "zip5"],
                "clean name + state": ["name_clean", "state"]}
+
+# WHD columns: counts (..._cnt) are whole numbers, back wages and penalties (..._amt, cmp_assd) are
+# dollars, and the rest (names, address, codes, dates, the FLSA repeat/willful flag) are text.
+WHD_INT_COLS = [c for c in WHD_FIELDS if c.endswith("_cnt")]
+WHD_REAL_COLS = [c for c in WHD_FIELDS if c.endswith("_amt") or c == "cmp_assd"]
+
+
+def _whd_type(c):
+    return ("INTEGER PRIMARY KEY" if c == "case_id" else "INTEGER" if c in WHD_INT_COLS else
+            "REAL" if c in WHD_REAL_COLS else "TEXT")
+
 
 SCHEMA = """
 CREATE TABLE sources (
@@ -41,14 +53,7 @@ CREATE TABLE employers (
   fein TEXT, naics TEXT, visa_classes TEXT, n_applications INTEGER, n_certified INTEGER,
   h1b_dependent INTEGER, willful_violator INTEGER, source_files TEXT,
   source_id INTEGER REFERENCES sources);
-CREATE TABLE violation_cases (
-  case_id INTEGER PRIMARY KEY, trade_nm TEXT, legal_name TEXT, street_addr_1_txt TEXT,
-  cty_nm TEXT, st_cd TEXT, zip_cd TEXT, naic_cd TEXT, findings_start_date TEXT,
-  findings_end_date TEXT, case_violtn_cnt INTEGER, bw_atp_amt REAL, ee_violtd_cnt INTEGER,
-  cmp_assd REAL, h1b_violtn_cnt INTEGER, h1b_bw_atp_amt REAL, h1b_ee_atp_cnt INTEGER,
-  h1b_cmp_assd_amt REAL, h2b_violtn_cnt INTEGER, h2b_bw_atp_amt REAL, h2b_ee_atp_cnt INTEGER,
-  h2a_violtn_cnt INTEGER, flsa_violtn_cnt INTEGER, load_dt TEXT,
-  source_id INTEGER REFERENCES sources);
+{violation_cases}
 CREATE TABLE matches (
   case_id INTEGER REFERENCES violation_cases, employer_id INTEGER REFERENCES employers,
   method TEXT, est_false_match_rate REAL, whd_name_field TEXT, employer_name_field TEXT,
@@ -56,10 +61,10 @@ CREATE TABLE matches (
 CREATE INDEX employers_fein ON employers(fein);
 CREATE INDEX employers_name ON employers(name_clean, state);
 CREATE INDEX matches_employer ON matches(employer_id);
-"""
-INT_COLS = ["n_applications", "n_certified", "case_violtn_cnt", "ee_violtd_cnt", "h1b_violtn_cnt",
-            "h1b_ee_atp_cnt", "h2b_violtn_cnt", "h2b_ee_atp_cnt", "h2a_violtn_cnt", "flsa_violtn_cnt"]
-REAL_COLS = ["bw_atp_amt", "cmp_assd", "h1b_bw_atp_amt", "h1b_cmp_assd_amt", "h2b_bw_atp_amt"]
+""".format(violation_cases="CREATE TABLE violation_cases (\n  " + ",\n  ".join(
+    f"{c} {_whd_type(c)}" for c in WHD_FIELDS) + ",\n  source_id INTEGER REFERENCES sources);")
+INT_COLS = ["n_applications", "n_certified"] + WHD_INT_COLS
+REAL_COLS = WHD_REAL_COLS
 # Disclosure columns stored as numbers, so wages and worker counts can be compared and summed.
 APP_INT_COLS = ["total_worker_positions", "new_employment", "continued_employment",
                 "change_previous_employment", "new_concurrent_employment", "change_employer",
@@ -185,7 +190,7 @@ def build(out, lca, h2b, whd_path, bench):
     load_applications(con, [lca_apps, h2b_apps])
     emp = pd.concat([lca_emp, h2b_emp])
 
-    whd = read(whd_path)
+    whd = read(whd_path).reindex(columns=WHD_FIELDS)  # an older, narrower download leaves columns empty
     whd["source_id"] = add_source(con, whd_path)
     whd = numeric(whd)
     whd["case_id"] = whd.case_id.astype(int)

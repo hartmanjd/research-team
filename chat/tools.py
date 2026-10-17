@@ -28,6 +28,7 @@ DATA_NOTES = """- Applications are FY2025 DOL disclosure records (LCA for H-1B, 
 - WHD cases cover every law WHD enforces (minimum wage, overtime, child labor, H-1B, H-2B, H-2A and others) and every year in the data, not only visa violations. Say "visa-program violations" only for h1b_violations on an H-1B employer or h2b_violations on an H-2B employer.
 - WHD records have no tax ID, so cases are linked to employers by cleaned name plus ZIP code or state. Some links are wrong (about 3 to 4 percent in a tax-ID test). When a single case drives your answer, mention that it is a name match.
 - A case with 0 violations and $0 back wages means WHD investigated and recorded no violations.
+- Each case's laws list says which laws WHD found violations under (minimum wage and overtime, child labor, family leave, federal contracts, the visa programs and others), with violations, back wages, workers owed and penalties for each. child_labor_minors, repeat_violator (WHD's own Repeat or Willful finding under the FLSA) and the minimum wage, overtime and retaliation back wage split appear when WHD recorded them. WHD publishes these counts, not a description of what happened.
 - red_flags are patterns in the employer's own FY2025 applications (wages at the floor, mostly entry-level wage levels, many withdrawn or denied applications, most workers placed outside the home state). They are reasons for a closer look, not evidence of a violation; say so.
 - dol_debarments are entries on DOL's published debarment lists (H-1B, H-2A, H-2B, permanent labor certification) whose name, and state when DOL gives one, match the employer. Debarment is a DOL enforcement finding. The match is by name, so say it is a name match.
 - representatives are the law firms, agent businesses and individual attorneys or agents named on applications, grouped across every employer they file for (firms by cleaned name, people by name and state). times_typical compares how many of their clients have visa-program violations with what the same mix of H-1B and H-2B employers shows overall. Representing an employer does not make a firm responsible for its violations; say so.
@@ -48,7 +49,7 @@ TOOLS = [
     {"name": "get_employer",
      "description": "One employer's details: address, tax ID, industry, application counts, flags, "
                     "totals of its linked WHD cases, each linked case (case_id, dates, violations, back "
-                    "wages, penalties, how it was matched), its most common jobs and how its offered wages "
+                    "wages, penalties, which laws were violated, how it was matched), its most common jobs and how its offered wages "
                     "compare with the prevailing wage, other rows sharing its tax ID, and any matching entry on DOL's "
                     "published debarment lists, and the law firms and attorneys or agents that filed its applications with how many of their other clients have visa-program violations.",
      "input_schema": _schema({"employer_id": {"type": "integer"}}, ["employer_id"])},
@@ -145,6 +146,11 @@ def get_employer(con, args):
                    "violations": v["case_violtn_cnt"], "back_wages": _money(v["bw_atp_amt"]),
                    "workers_owed": v["ee_violtd_cnt"], "penalties": _money(v["cmp_assd"]),
                    "h1b_violations": v["h1b_violtn_cnt"], "h2b_violations": v["h2b_violtn_cnt"],
+                   "laws": [{"law": r["name"], "violations": r["violations"], "back_wages": _money(r["back_wages"]),
+                             "workers_owed": r["workers"], "penalties": _money(r["penalties"])}
+                            for r in v["laws"]],
+                   **{k: (_money(x) if k.endswith("back_wages") else x)
+                      for k, x in v["details"].items() if x},
                    "match": q.match_label(v["method"], v["est_false_match_rate"])}
                   for v in cases[:MAX_ROWS]],
         "cases_not_shown": max(0, len(cases) - MAX_ROWS),
