@@ -37,6 +37,15 @@ AI tools can query the data through a read-only MCP server. No account or key is
 
 - https://visa-employer-watch.onrender.com/docs: interactive documentation for the read-only JSON API that the website uses
 
+## CSV downloads
+
+Every row keeps its record IDs (employer ID, DOL case number, WHD case ID) and a link to the page that shows it.
+
+- Watchlist: https://visa-employer-watch.onrender.com/api/watchlist.csv (same filters as /api/watchlist: program, state, sector, since, visa_only, min_apps)
+- One employer's applications: https://visa-employer-watch.onrender.com/api/employers/<employer_id>/applications.csv
+- One employer's linked WHD cases: https://visa-employer-watch.onrender.com/api/employers/<employer_id>/cases.csv
+- DOL debarments: https://visa-employer-watch.onrender.com/api/debarments.csv
+
 ## Optional
 
 - Source code and data build steps: https://github.com/hartmanjd/research-team

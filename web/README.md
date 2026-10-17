@@ -75,6 +75,10 @@ that lists the MCP address, its tools, what the data means and which pages to ci
 | `GET /api/overview` | Headline totals and the lookup page's starting points (computed once per server start) |
 | `GET /api/debarments` | Every DOL debarment entry with its status and matching visa employers. The employer endpoint also returns the entries matching that employer, with its applications decided inside each debarment period |
 | `GET /api/methodology` | The figures the methodology page quotes: sources, date coverage, links per rule, the matching benchmark and visa-case match rates (computed once per server start) |
+| `GET /api/watchlist.csv?…` | The Watchlist as CSV with the same filters, each employer with the WHD case IDs behind its row and a link to its page |
+| `GET /api/employers/{id}/applications.csv` | All of an employer's applications as CSV: DOL case number, job, wages, worksite, law firm, source file and a link to each application page |
+| `GET /api/employers/{id}/cases.csv` | An employer's linked WHD cases as CSV, with WHD's field names, load date, match rule and error rate, and source file |
+| `GET /api/debarments.csv` | Every DOL debarment entry as CSV, with the IDs of matching employers |
 | `GET /api/meta` | States, NAICS sector names and the source files behind the database |
 | `POST /mcp` | The chat's eight lookups as a read-only MCP server (see `chat/README.md` for connecting Claude Desktop) |
 | `GET /api/ask` | Whether the Ask page can take questions (`enabled`, or the `reason` it can't) |

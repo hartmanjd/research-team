@@ -35,6 +35,12 @@ async function api(path, params) {
   return r.json();
 }
 
+// A download link for one of the API's CSV files; every row carries the IDs of the records it came from.
+function csvLink(path, params, title) {
+  const qs = params ? new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null)).toString() : "";
+  return `<a class="btn csv-link" href="/api${path}${qs ? "?" + qs : ""}" download title="${esc(title)}">${icon.download} CSV</a>`;
+}
+
 function loading(text = "Loading…") {
   app.innerHTML = `<div class="loading"><div class="spinner"></div>${esc(text)}</div>`;
 }
@@ -259,14 +265,16 @@ async function employerPage(id) {
 
     ${profilePanels(d.profile, e.program)}
 
-    <h2 class="section">Wage and Hour cases <span class="count">${n(d.cases.length)}</span></h2>
+    <h2 class="section">Wage and Hour cases <span class="count">${n(d.cases.length)}</span>
+      ${d.cases.length ? csvLink(`/employers/${id}/cases.csv`, null, "Download these cases as CSV, with WHD case IDs and how each was linked") : ""}</h2>
     ${d.cases.length ? `
       <div class="callout">${icon.info}<div>WHD records carry no tax ID, so each case is linked by name and location.
         A <b style="color:var(--ok)">green</b> edge means the ZIP code matched too; <b style="color:var(--warn)">amber</b> means only the state did.
         Check the WHD name and address before relying on a link. <a href="#/methodology">How cases are linked</a>.</div></div>
       ${d.cases.map(caseCard).join("")}` : `<div class="card empty">No WHD enforcement case is linked to this employer.</div>`}
 
-    <h2 class="section">Visa applications <span class="count" id="app-count"></span></h2>
+    <h2 class="section">Visa applications <span class="count" id="app-count"></span>
+      ${s.applications ? csvLink(`/employers/${id}/applications.csv`, null, "Download every application as CSV, with DOL case numbers") : ""}</h2>
     <div class="card" id="apps"><div class="loading"><div class="spinner"></div></div></div>
     <p class="note">Each case number is DOL's own; click one to see every field of the application. The source column links to the
       DOL disclosure file the row came from. Wages are shown in the unit the employer gave (per year, hour, ...).</p>
@@ -518,7 +526,7 @@ async function watchlistPage(params) {
       <div class="field"><label for="f-min">Min. applications</label><input id="f-min" type="number" min="1" step="1" value="${esc(f.min_apps)}" style="width:110px"></div>
       <label class="toggle"><input id="f-visa" type="checkbox" ${f.visa_only ? "checked" : ""}> Only violations of the employer's visa program</label>
       <span class="spacer"></span>
-      <button class="btn" id="csv">${icon.download} CSV</button>
+      ${csvLink("/watchlist.csv", { ...f, visa_only: f.visa_only ? "true" : "" }, "Download these employers as CSV, with the WHD case IDs behind each row")}
     </div>
     <div class="tiles" id="wl-tiles"></div>
     <div class="card" style="margin-top:16px" id="wl-table"><div class="loading"><div class="spinner"></div>Loading watchlist…</div></div>
@@ -537,7 +545,6 @@ async function watchlistPage(params) {
   document.getElementById("f-sector").addEventListener("change", (e) => go({ sector: e.target.value }));
   document.getElementById("f-min").addEventListener("change", (e) => go({ min_apps: String(Math.max(1, parseInt(e.target.value, 10) || 1)) }));
   document.getElementById("f-visa").addEventListener("change", (e) => go({ visa_only: e.target.checked ? "1" : "0" }));
-  document.getElementById("csv").addEventListener("click", downloadCsv);
 
   if (wl.key !== key) {
     const d = await api("/watchlist", { ...f, visa_only: f.visa_only ? "true" : "" });
@@ -603,18 +610,6 @@ function renderWatchlistTable(go) {
     state.back = { href: location.hash, label: "Watchlist" };
     location.hash = "#/employer/" + tr.dataset.id;
   }));
-}
-
-function downloadCsv() {
-  const cols = ["employer_id", "employer_name", "city", "state", "program", "n_applications", "n_cases", "zip_links",
-    "visa_violations", "violations", "back_wages", "workers", "penalties", "latest_case", "willful_violator"];
-  const cell = (v) => /[",\n]/.test(String(v ?? "")) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? "");
-  const csv = [cols.join(",")].concat(wl.rows.map((r) => cols.map((c) => cell(r[c])).join(","))).join("\n");
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-  a.download = "watchlist.csv";
-  a.click();
-  URL.revokeObjectURL(a.href);
 }
 
 // ---------- shared chart helpers ----------
@@ -1187,6 +1182,7 @@ async function debarmentsPage(params) {
     </div>
     <div class="chip-row">
       ${["", ...progs].map((p) => `<a class="chip ${p === program ? "active" : ""}" href="#/debarments${p ? "?program=" + p : ""}">${p || "All programs"}</a>`).join("")}
+      ${csvLink("/debarments.csv", null, "Download every DOL debarment entry as CSV, with the IDs of matching employers")}
     </div>
     <div class="card"><div class="table-wrap" style="max-height:70vh"><table class="debar-table">
       <thead><tr><th>DOL entry</th><th>Type</th><th>Program</th><th>Period</th><th>Status</th><th>Reason</th><th>FY2025 visa filer</th></tr></thead>
