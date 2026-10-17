@@ -782,3 +782,211 @@ def debarments(con, path=None, today=None):
             SELECT employer_id, employer_name, program, city, state, n_applications FROM employers
             WHERE employer_id = ?""", i)]})
     return out
+
+
+# ---------- Shared representatives ----------
+# The law firms, agent businesses and individual attorneys or agents named on applications, grouped across
+# every employer they file for. A firm is keyed by its cleaned name (so "Fragomen, Del Rey, ..., LLP" and
+# "FRAGOMEN, DEL REY, ... LLP" are one firm); a person by their uppercased name plus the state on the form.
+# Representing an employer does not make a firm responsible for that employer's violations.
+
+REP_KINDS = {"firm": "Law firm or agent business", "person": "Attorney or agent"}
+
+
+def firm_key(name):
+    return clean_name(name or "")
+
+
+def person_key(first, last, state):
+    name = " ".join(f"{first or ''} {last or ''}".upper().split())
+    return f"{name} ({state.strip().upper()})" if name and (state or "").strip() else name
+
+
+def _db_key(con):
+    return con.execute("PRAGMA database_list").fetchone()[2]
+
+
+def warm_representatives(path=None):
+    """Build the representative index ahead of the first request (it takes a few seconds)."""
+    con = connect(path)
+    try:
+        _rep_index(_db_key(con))
+    finally:
+        con.close()
+
+
+@lru_cache(maxsize=2)
+def _rep_index(db_key):
+    """{kind: {key: {"names", "employers", "feins"}}} plus each employer's WHD case outcomes."""
+    con = connect(db_key)
+    try:
+        reps = {k: {} for k in REP_KINDS}
+        firm_keys = {}
+        have = {r[1] for r in con.execute("PRAGMA table_info(applications)")}
+        col = lambda c: f"a.{c}" if c in have else "''"  # the H-1B and H-2B files name these differently
+        either = lambda c1, c2: f"COALESCE(NULLIF({col(c1)}, ''), {col(c2)})"
+        for r in con.execute(f"""
+                SELECT a.employer_id, {col("lawfirm_name_business_name")}, {col("lawfirm_business_fein")},
+                       {either("agent_attorney_first_name", "attorney_agent_first_name")},
+                       {either("agent_attorney_last_name", "attorney_agent_last_name")},
+                       {either("agent_attorney_state", "attorney_agent_state")}
+                FROM applications a"""):
+            eid, firm, ffein, first, last, st = r
+            firm = (firm or "").strip()
+            if firm:
+                key = firm_keys.get(firm)
+                if key is None:
+                    key = firm_keys[firm] = firm_key(firm)
+                if key:
+                    _rep_add(reps["firm"], key, firm, eid, clean_fein(ffein))
+            pkey = person_key(first, last, st)
+            if pkey:
+                _rep_add(reps["person"], pkey, pkey, eid, None, firm)
+        outcomes = {}
+        for r in con.execute("""
+                SELECT m.employer_id, e.program, v.case_id, COALESCE(v.bw_atp_amt, 0),
+                       CASE e.program WHEN 'H-1B' THEN v.h1b_violtn_cnt WHEN 'H-2B' THEN v.h2b_violtn_cnt END
+                FROM matches m JOIN employers e USING (employer_id) JOIN violation_cases v USING (case_id)"""):
+            o = outcomes.setdefault(r[0], {"cases": {}, "visa": False})
+            o["cases"][r[2]] = r[3]
+            o["visa"] = o["visa"] or bool(r[4])
+        employers = {r[0]: r[1] for r in con.execute("SELECT employer_id, program FROM employers")}
+        return {"reps": reps, "outcomes": outcomes, "programs": employers}
+    finally:
+        con.close()
+
+
+def _rep_add(group, key, name, employer_id, fein=None, firm=None):
+    g = group.get(key)
+    if g is None:
+        g = group[key] = {"names": {}, "employers": {}, "feins": set(), "firms": {}}
+    g["names"][name] = g["names"].get(name, 0) + 1
+    g["employers"][employer_id] = g["employers"].get(employer_id, 0) + 1
+    if fein:
+        g["feins"].add(fein)
+    if firm:
+        g["firms"][firm] = g["firms"].get(firm, 0) + 1
+
+
+def _rep_summary(kind, key, g, idx, debarred):
+    out, prog = idx["outcomes"], idx["programs"]
+    clients = g["employers"]
+    with_case = [e for e in clients if e in out]
+    visa = [e for e in with_case if out[e]["visa"]]
+    cases = {c: bw for e in with_case for c, bw in out[e]["cases"].items()}  # a case linked twice counts once
+    programs = {}
+    for e in clients:
+        programs[prog.get(e)] = programs.get(prog.get(e), 0) + 1
+    # What the same client mix would show at each program's overall rate, so H-2B-heavy agents are
+    # compared with H-2B employers rather than with H-1B ones.
+    base = _program_rates(idx)
+    expected = sum(c * base.get(p, 0) for p, c in programs.items())
+    return {"kind": kind, "key": key, "name": max(g["names"], key=g["names"].get),
+            "clients": len(clients), "applications": sum(clients.values()),
+            "programs": {p: c for p, c in programs.items() if p},
+            "clients_with_cases": len(with_case), "clients_visa_violations": len(visa),
+            "expected_visa_violations": round(expected, 1),
+            "times_typical": round(len(visa) / expected, 1) if expected else None,
+            "clients_debarred": len(debarred & set(clients)),
+            "cases": len(cases), "back_wages": sum(cases.values())}
+
+
+@lru_cache(maxsize=2)
+def _debarred_ids(db_key):
+    con = connect(db_key)
+    try:
+        return frozenset(e["employer_id"] for d in debarments(con) for e in d["employers"])
+    finally:
+        con.close()
+
+
+def _program_rates(idx):
+    """Share of each program's employers with a visa-program violation of their own."""
+    cached = idx.get("program_rates")
+    if cached is None:
+        n, k = {}, {}
+        for e, p in idx["programs"].items():
+            n[p] = n.get(p, 0) + 1
+            o = idx["outcomes"].get(e)
+            k[p] = k.get(p, 0) + bool(o and o["visa"])
+        cached = idx["program_rates"] = {p: k[p] / n[p] for p in n}
+    return cached
+
+
+def rep_baselines(con):
+    """Share of all visa employers, by program, with a visa-program violation of their own."""
+    idx = _rep_index(_db_key(con))
+    return {"visa_violations": _program_rates(idx), "employers": len(idx["programs"])}
+
+
+@lru_cache(maxsize=4)
+def _rep_table(db_key, kind):
+    idx = _rep_index(db_key)
+    debarred = _debarred_ids(db_key)
+    return [_rep_summary(kind, k, g, idx, debarred) for k, g in idx["reps"][kind].items()]
+
+
+def representatives(con, kind="firm", min_clients=10, query=None, program=None, sort="clients_visa_violations"):
+    """Representatives with at least `min_clients` client employers, most clients with visa-program
+    violations first. `query` keeps names containing it (after cleaning)."""
+    if kind not in REP_KINDS:
+        raise ValueError(f"kind must be one of {', '.join(REP_KINDS)}")
+    rows_ = _rep_table(_db_key(con), kind)
+    needle = clean_name(query) if query else ""
+    out = [r for r in rows_ if r["clients"] >= min_clients
+           and (not needle or needle in r["key"])
+           and (not program or program in r["programs"])]
+    if sort == "visa_share":
+        out.sort(key=lambda r: (-r["clients_visa_violations"] / r["clients"], -r["clients"]))
+    else:
+        out.sort(key=lambda r: (-r.get(sort, 0), -r["clients"], r["key"]))
+    return out
+
+
+def representative(con, kind, key):
+    """One representative: its totals, the names and tax IDs it filed under, and every client employer."""
+    if kind not in REP_KINDS:
+        return None
+    db_key = _db_key(con)
+    idx = _rep_index(db_key)
+    g = idx["reps"][kind].get(key)
+    if not g:
+        return None
+    debarred = _debarred_ids(db_key)
+    out = _rep_summary(kind, key, g, idx, debarred)
+    out["name_variants"] = sorted(({"name": n, "applications": c} for n, c in g["names"].items()),
+                                  key=lambda r: -r["applications"])[:10]
+    out["feins"] = sorted(g["feins"])
+    out["firms"] = sorted(({"name": n, "key": firm_key(n), "applications": c} for n, c in g["firms"].items()),
+                          key=lambda r: -r["applications"])[:10]
+    ids = list(g["employers"])
+    clients = []
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        clients += rows(con, f"""
+            SELECT employer_id, employer_name, city, state, program, n_applications FROM employers
+            WHERE employer_id IN ({",".join("?" * len(chunk))})""", *chunk)
+    for c in clients:
+        o = idx["outcomes"].get(c["employer_id"])
+        c["applications_by_rep"] = g["employers"][c["employer_id"]]
+        c["cases"] = len(o["cases"]) if o else 0
+        c["back_wages"] = sum(o["cases"].values()) if o else 0
+        c["visa_violations"] = bool(o and o["visa"])
+        c["debarred"] = c["employer_id"] in debarred
+    clients.sort(key=lambda c: (-c["debarred"], -c["visa_violations"], -c["back_wages"], -c["applications_by_rep"]))
+    out["client_list"] = clients
+    out["baseline"] = rep_baselines(con)
+    return out
+
+
+def employer_representatives(con, employer_id):
+    """The firms and people that filed this employer's applications, each with its other clients' record."""
+    db_key = _db_key(con)
+    idx = _rep_index(db_key)
+    debarred = _debarred_ids(db_key)
+    out = []
+    for kind in REP_KINDS:
+        for key, g in idx["reps"][kind].items():
+            if employer_id in g["employers"]:
+                out.append(_rep_summary(kind, key, g, idx, debarred))
+    return sorted(out, key=lambda r: (r["kind"] != "firm", -r["clients"]))

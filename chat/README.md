@@ -41,7 +41,7 @@ so. The summary gives the pass count and the total and per-question cost. `--onl
 
 ## Use it from Claude Desktop (MCP)
 
-The website also serves the same eight lookups as a read-only MCP server at `/mcp`. MCP (Model Context
+The website also serves the same nine lookups as a read-only MCP server at `/mcp`. MCP (Model Context
 Protocol) is a standard way for an AI app to call outside tools. Once connected, Claude can look things up in
 this database while you chat with it in Claude Desktop or on claude.ai, and no API key is needed. Your own
 Claude plan pays for the conversation, and the site does no writing of any kind.
@@ -69,7 +69,7 @@ copy is easiest to test with a command-line client, such as the MCP Inspector
 
 | File | What it is |
 | --- | --- |
-| tools.py | The eight lookups the model can call, their descriptions and input schemas |
+| tools.py | The nine lookups the model can call, their descriptions and input schemas |
 | engine.py | The instructions, the question-and-lookup loop, citation links and checks, and cost |
 | limits.py | The Ask page's daily spend cap and per-visitor rate limits |
 | __main__.py | `python3 -m chat`: ask one question from the terminal |

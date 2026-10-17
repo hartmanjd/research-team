@@ -59,6 +59,7 @@ async function route() {
   const { path, params } = parseHash();
   const m = path.match(/^\/employer\/(\d+)$/);
   const ma = path.match(/^\/application\/([A-Za-z0-9-]+)$/);
+  let mr;
   try {
     if (ma) { setActiveNav((state.back.href.match(/^#\/(watchlist|map|industries|ask)/) || [, "search"])[1]); await applicationPage(ma[1]); }
     else if (m) { setActiveNav((state.back.href.match(/^#\/(watchlist|map|industries|ask)/) || [, "search"])[1]); await employerPage(+m[1]); }
@@ -67,6 +68,8 @@ async function route() {
     else if (path === "/industries") { setActiveNav("industries"); await industriesPage(params); }
     else if (path === "/ask") { setActiveNav("ask"); await askPage(); }
     else if (path === "/debarments") { setActiveNav(""); await debarmentsPage(params); }
+    else if (path === "/representatives") { setActiveNav(""); await representativesPage(params); }
+    else if ((mr = path.match(/^\/representative\/(firm|person)\/(.+)$/))) { setActiveNav(""); await representativePage(mr[1], decodeURIComponent(mr[2])); }
     else { setActiveNav("search"); searchPage(params); }
   } catch (err) {
     app.innerHTML = `<div class="empty"><h2>Something went wrong</h2><p>${esc(err.message)}</p></div>`;
@@ -77,9 +80,11 @@ document.addEventListener("click", (e) => {
   const a = e.target.closest("a[data-employer]");
   if (a) {
     const { path } = parseHash();
-    if (!path.startsWith("/employer") && !path.startsWith("/application")) {
+    if (path.startsWith("/representative/")) {
+      state.back = { href: location.hash, label: document.querySelector(".emp-head h1")?.textContent || "Law firm or agent" };
+    } else if (!path.startsWith("/employer") && !path.startsWith("/application")) {
       const labels = { "/watchlist": "Watchlist", "/map": "Map", "/industries": "Industries", "/ask": "Ask",
-                       "/debarments": "Debarments" };
+                       "/debarments": "Debarments", "/representatives": "Law firms and agents" };
       state.back = { href: location.hash || "#/", label: labels[path] || "Employer lookup" };
     }
   }
@@ -263,6 +268,7 @@ async function employerPage(id) {
       <div class="sub">Year the WHD findings period ended. Hover a bar for its back wages.</div>${yearColumns(d.case_years)}</div>` : ""}
 
     ${profilePanels(d.profile, e.program)}
+    ${repsPanel(d.representatives)}
 
     <h2 class="section">Wage and Hour cases <span class="count">${n(d.cases.length)}</span>
       ${d.cases.length ? csvLink(`/employers/${id}/cases.csv`, null, "Download these cases as CSV, with WHD case IDs and how each was linked") : ""}</h2>
@@ -951,6 +957,7 @@ function lookupText(c) {
     case "state_stats": return `Compared states${f}`;
     case "industry_stats": return `Compared industries${f}`;
     case "data_overview": return "Checked the database totals";
+    case "representatives": return a.key ? `Listed the clients of ${esc(a.key)}` : `Ranked ${a.kind === "person" ? "attorneys and agents" : "law firms and agents"}${a.query ? ` matching “${esc(a.query)}”` : ""}`;
     default: return esc(c.name);
   }
 }
@@ -1195,4 +1202,124 @@ async function debarmentsPage(params) {
     <p class="note">Sources: <a href="https://www.dol.gov/agencies/eta/foreign-labor/program-debarments" target="_blank" rel="noopener">OFLC program debarments</a>
       (PERM, H-2A, H-2B) and <a href="https://www.dol.gov/agencies/whd/immigration/h1b/debarment" target="_blank" rel="noopener">WHD H-1B debarments</a>.
       DOL's H-1B list gives no addresses, so H-1B entries match on name alone.</p>`;
+}
+
+// ---------- shared representatives ----------
+const repHref = (r) => `#/representative/${r.kind}/${encodeURIComponent(r.key)}`;
+const timesBadge = (r) => r.times_typical == null || !r.clients_visa_violations ? '<span class="muted">–</span>'
+  : `<span class="badge ${r.times_typical >= 3 ? "bad" : r.times_typical >= 1.5 ? "warn" : ""}" title="${n(r.clients_visa_violations)} clients with visa-program violations, against ${r.expected_visa_violations} expected for the same mix of H-1B and H-2B employers">${r.times_typical}×</span>`;
+const REP_NOTE = `Representing an employer does not make a firm or attorney responsible for that employer's violations.
+  A high count can simply mean a large practice. “× typical” compares the share of clients with visa-program violations
+  with all employers in the same programs; with few clients it can swing a lot.`;
+
+function repsPanel(reps) {
+  if (!reps || !reps.length) return "";
+  return `<section class="card panel reps" style="margin-top:16px">
+    <h3>Who else their representatives file for</h3>
+    <div class="sub">The law firms and attorneys or agents on this employer's applications, across every employer they file for.</div>
+    <div class="table-wrap"><table class="mini">
+      <thead><tr><th>Representative</th><th class="num">Clients</th><th class="num">With WHD cases</th><th class="num">With visa violations</th><th class="num">Against typical</th><th class="num">Debarred</th></tr></thead>
+      <tbody>${reps.map((r) => `<tr>
+        <td class="wrap"><a href="${repHref(r)}">${esc(r.name)}</a><div class="muted small">${r.kind === "firm" ? "Law firm or agent business" : "Attorney or agent"}</div></td>
+        <td class="num">${n(r.clients)}</td><td class="num">${n(r.clients_with_cases)}</td>
+        <td class="num">${n(r.clients_visa_violations)}</td><td class="num">${timesBadge(r)}</td>
+        <td class="num">${r.clients_debarred ? `<span class="bad-text">${n(r.clients_debarred)}</span>` : "0"}</td></tr>`).join("")}</tbody>
+    </table></div>
+    <div class="note">${REP_NOTE} <a href="#/representatives">See all law firms and agents</a>.</div>
+  </section>`;
+}
+
+const REP_SORTS = [["clients_visa_violations", "Clients with visa violations"], ["times_typical", "Against typical rate"],
+  ["clients", "Clients"], ["clients_with_cases", "Clients with WHD cases"], ["back_wages", "Clients' back wages"],
+  ["clients_debarred", "Debarred clients"]];
+
+async function representativesPage(params) {
+  const f = { kind: params.get("kind") || "firm", program: params.get("program") || "", q: params.get("q") || "",
+              sort: params.get("sort") || "clients_visa_violations", min_clients: params.get("min_clients") || "10" };
+  loading("Loading law firms and agents…");
+  const d = await api("/representatives", f);
+  const b = d.baseline.visa_violations;
+  const go = (changes) => {
+    const p = new URLSearchParams({ ...f, ...changes });
+    [...p.entries()].forEach(([k, v]) => { if (!v || (k === "kind" && v === "firm") || (k === "min_clients" && v === "10") || (k === "sort" && v === "clients_visa_violations")) p.delete(k); });
+    location.hash = "#/representatives" + (p.toString() ? "?" + p : "");
+  };
+  const seg = (attr, val, label, cur) => `<button data-${attr}="${val}" class="${cur === val ? "on" : ""}">${label}</button>`;
+  const maxBw = Math.max(...d.rows.map((r) => r.back_wages), 1);
+  app.innerHTML = `
+    <div class="eyebrow">Shared representatives</div>
+    <h1 class="page-title">Law firms and agents</h1>
+    <p class="lede">The law firms, agent businesses and individual attorneys or agents named on FY2025 applications,
+      across every employer they file for, and how many of those employers have Wage and Hour cases.</p>
+    <div class="card filters">
+      <div class="field"><label>Show</label><div class="segmented" id="r-kind">${seg("kind", "firm", "Firms and agent businesses", f.kind)}${seg("kind", "person", "Attorneys and agents", f.kind)}</div></div>
+      <div class="field"><label>Clients in</label><div class="segmented" id="r-program">${seg("program", "", "All", f.program)}${seg("program", "H-1B", "H-1B", f.program)}${seg("program", "H-2B", "H-2B", f.program)}</div></div>
+      <div class="field"><label for="r-q">Name</label><input id="r-q" type="search" value="${esc(f.q)}" placeholder="Part of the name" style="width:200px"></div>
+      <div class="field"><label for="r-sort">Rank by</label><select id="r-sort">${REP_SORTS.map(([k, l]) => `<option value="${k}" ${k === f.sort ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+      <div class="field"><label for="r-min">Min. clients</label><input id="r-min" type="number" min="1" step="1" value="${esc(f.min_clients)}" style="width:100px"></div>
+    </div>
+    <div class="tiles" style="margin-top:16px">
+      <div class="card tile"><div class="label">${f.kind === "firm" ? "Firms and businesses" : "Attorneys and agents"} listed</div><div class="value">${n(d.total)}</div><div class="sub">with at least ${n(f.min_clients)} client employers</div></div>
+      <div class="card tile"><div class="label">Typical H-1B rate</div><div class="value">${pct(b["H-1B"])}</div><div class="sub">of H-1B employers have an H-1B violation</div></div>
+      <div class="card tile"><div class="label">Typical H-2B rate</div><div class="value">${pct(b["H-2B"])}</div><div class="sub">of H-2B employers have an H-2B violation</div></div>
+    </div>
+    <div class="card" style="margin-top:16px">${d.rows.length ? `<div class="table-wrap" style="max-height:70vh"><table class="rep-table">
+      <thead><tr><th>${f.kind === "firm" ? "Firm or agent business" : "Attorney or agent"}</th><th class="num">Clients</th><th class="num">With WHD cases</th>
+        <th class="num">With visa violations</th><th class="num">Against typical</th><th class="num">Debarred</th><th class="num">Clients' back wages</th></tr></thead>
+      <tbody>${d.rows.map((r) => `<tr>
+        <td class="wrap"><a href="${repHref(r)}">${esc(r.name)}</a><div class="muted small">${Object.entries(r.programs).map(([p, c]) => `${p} ${n(c)}`).join(" · ")} · ${n(r.applications)} applications</div></td>
+        <td class="num">${n(r.clients)}</td><td class="num">${n(r.clients_with_cases)}</td>
+        <td class="num"><b>${n(r.clients_visa_violations)}</b> <span class="muted small">${pct(r.clients_visa_violations / r.clients, 0)}</span></td>
+        <td class="num">${timesBadge(r)}</td>
+        <td class="num">${r.clients_debarred ? `<span class="bad-text">${n(r.clients_debarred)}</span>` : "0"}</td>
+        <td class="num"><span class="bar"><i style="width:${Math.max(2, 100 * r.back_wages / maxBw)}%"></i><span>${money(r.back_wages)}</span></span></td></tr>`).join("")}</tbody>
+    </table></div>${d.total > d.rows.length ? `<div class="note" style="padding:10px 16px">Showing the first ${n(d.rows.length)} of ${n(d.total)}. Narrow by name or raise the minimum.</div>` : ""}`
+    : `<div class="empty">No ${f.kind === "firm" ? "firms" : "attorneys or agents"} match these filters.</div>`}</div>
+    <p class="note">${REP_NOTE} Firms are grouped by cleaned name, so spelling variants of one firm count together; people are grouped by
+      name and the state on the form, so two people with the same name in one state count as one. WHD cases are linked to employers by
+      name and location (about 3 to 4% of links are wrong).</p>`;
+  document.getElementById("r-kind").addEventListener("click", (e) => { if (e.target.dataset.kind) go({ kind: e.target.dataset.kind }); });
+  document.getElementById("r-program").addEventListener("click", (e) => { if (e.target.dataset.program != null) go({ program: e.target.dataset.program }); });
+  document.getElementById("r-sort").addEventListener("change", (e) => go({ sort: e.target.value }));
+  document.getElementById("r-min").addEventListener("change", (e) => go({ min_clients: String(Math.max(1, parseInt(e.target.value, 10) || 1)) }));
+  document.getElementById("r-q").addEventListener("change", (e) => go({ q: e.target.value.trim() }));
+}
+
+async function representativePage(kind, key) {
+  loading("Loading clients…");
+  const r = await api(`/representatives/${kind}/${encodeURIComponent(key)}`);
+  const CAP = 300;
+  const shown = r.client_list.slice(0, CAP);
+  const flagged = r.client_list.filter((c) => c.cases || c.debarred).length;
+  app.innerHTML = `
+    <a class="back" href="#/representatives${kind === "person" ? "?kind=person" : ""}">${icon.back} Law firms and agents</a>
+    <section class="card emp-head">
+      <div class="badges"><span class="badge">${kind === "firm" ? "Law firm or agent business" : "Attorney or agent"}</span>
+        ${Object.entries(r.programs).map(([p, c]) => `<span class="badge ${p === "H-1B" ? "h1b" : "h2b"}">${p} · ${n(c)} clients</span>`).join("")}</div>
+      <h1>${esc(r.name)}</h1>
+      <div class="facts">
+        ${r.name_variants.length > 1 ? `<span><b>Also written</b>${r.name_variants.slice(1, 5).map((v) => esc(v.name)).join(" · ")}</span>` : ""}
+        ${r.feins.length ? `<span><b>Tax ID</b><span class="mono">${r.feins.slice(0, 3).map(esc).join(", ")}</span></span>` : ""}
+        ${r.firms.length ? `<span><b>Firms on the form</b>${r.firms.slice(0, 3).map((f) => `<a href="#/representative/firm/${encodeURIComponent(f.key)}">${esc(f.name)}</a>`).join(" · ")}</span>` : ""}
+      </div>
+    </section>
+    <div class="tiles">
+      <div class="card tile"><div class="label">Client employers</div><div class="value">${n(r.clients)}</div><div class="sub">${n(r.applications)} applications</div></div>
+      <div class="card tile ${r.clients_with_cases ? "alert" : ""}"><div class="label">Clients with WHD cases</div><div class="value">${n(r.clients_with_cases)}</div><div class="sub">${pct(r.clients_with_cases / r.clients, 0)} of clients · all laws</div></div>
+      <div class="card tile ${r.times_typical >= 1.5 ? "alert" : ""}"><div class="label">With visa-program violations</div><div class="value">${n(r.clients_visa_violations)}</div><div class="sub">${r.times_typical == null ? "" : `${r.times_typical}× the typical rate (${r.expected_visa_violations} expected)`}</div></div>
+      <div class="card tile ${r.clients_debarred ? "bad" : ""}"><div class="label">Debarred clients</div><div class="value">${n(r.clients_debarred)}</div><div class="sub">on a DOL debarment list</div></div>
+      <div class="card tile ${r.back_wages ? "good" : ""}"><div class="label">Clients' back wages</div><div class="value">${compactMoney(r.back_wages)}</div><div class="sub">${n(r.cases)} linked cases</div></div>
+    </div>
+    <h2 class="section">Client employers <span class="count">${n(r.clients)}</span></h2>
+    <div class="card"><div class="table-wrap" style="max-height:75vh"><table class="clickable">
+      <thead><tr><th>Employer</th><th class="num">Apps filed by this ${kind === "firm" ? "firm" : "person"}</th><th class="num">WHD cases</th><th>Record</th><th class="num">Back wages</th></tr></thead>
+      <tbody>${shown.map((c) => `<tr>
+        <td class="wrap"><a data-employer href="#/employer/${c.employer_id}">${esc(c.employer_name)}</a><div class="muted small">${esc(c.program)} · ${esc(titleCase(c.city))}, ${esc(c.state)}</div></td>
+        <td class="num">${n(c.applications_by_rep)}</td><td class="num">${n(c.cases)}</td>
+        <td>${c.debarred ? '<span class="badge bad">Debarred</span> ' : ""}${c.visa_violations ? `<span class="badge warn">${esc(c.program)} violations</span>` : c.cases ? '<span class="muted small">other laws or none found</span>' : '<span class="muted">–</span>'}</td>
+        <td class="num ${c.back_wages ? "good-text" : "muted"}">${c.back_wages ? money(c.back_wages) : "$0"}</td></tr>`).join("")}</tbody>
+    </table></div>${r.clients > CAP ? `<div class="note" style="padding:10px 16px">Showing ${n(CAP)} of ${n(r.clients)} clients: all ${n(flagged)} with a WHD case or debarment come first.</div>` : ""}</div>
+    <p class="note">${REP_NOTE} ${kind === "firm" ? "This firm is every spelling that cleans to the same name." : "This person is everyone with this name and state on the form."}
+      WHD cases are linked to employers by name and location; open an employer to check each link.</p>`;
+  window.scrollTo(0, 0);
 }

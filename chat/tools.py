@@ -30,6 +30,7 @@ DATA_NOTES = """- Applications are FY2025 DOL disclosure records (LCA for H-1B, 
 - A case with 0 violations and $0 back wages means WHD investigated and recorded no violations.
 - red_flags are patterns in the employer's own FY2025 applications (wages at the floor, mostly entry-level wage levels, many withdrawn or denied applications, most workers placed outside the home state). They are reasons for a closer look, not evidence of a violation; say so.
 - dol_debarments are entries on DOL's published debarment lists (H-1B, H-2A, H-2B, permanent labor certification) whose name, and state when DOL gives one, match the employer. Debarment is a DOL enforcement finding. The match is by name, so say it is a name match.
+- representatives are the law firms, agent businesses and individual attorneys or agents named on applications, grouped across every employer they file for (firms by cleaned name, people by name and state). times_typical compares how many of their clients have visa-program violations with what the same mix of H-1B and H-2B employers shows overall. Representing an employer does not make a firm responsible for its violations; say so.
 - willful_violator is the employer's own Yes/No answer on its applications, not a DOL finding. It counts only when most applications say Yes; willful_yes gives the count.
 - Money is in U.S. dollars. back_wages is the back wages WHD found owed; penalties are civil money penalties assessed."""
 
@@ -49,7 +50,7 @@ TOOLS = [
                     "totals of its linked WHD cases, each linked case (case_id, dates, violations, back "
                     "wages, penalties, how it was matched), its most common jobs and how its offered wages "
                     "compare with the prevailing wage, other rows sharing its tax ID, and any matching entry on DOL's "
-                    "published debarment lists.",
+                    "published debarment lists, and the law firms and attorneys or agents that filed its applications with how many of their other clients have visa-program violations.",
      "input_schema": _schema({"employer_id": {"type": "integer"}}, ["employer_id"])},
     {"name": "list_applications",
      "description": "An employer's visa applications, newest decision first: case_number, status, job, "
@@ -81,6 +82,23 @@ TOOLS = [
      "description": "The same numbers as state_stats, per NAICS industry sector.",
      "input_schema": _schema({"program": _PROGRAM, "visa_violations_only": _VISA_ONLY,
                               "sort_by": {"type": "string", "enum": GROUP_SORTS}, "limit": _LIMIT})},
+    {"name": "representatives",
+     "description": "Law firms and agent businesses (kind firm) or individual attorneys and agents (kind person) "
+                    "across every employer they file for: clients, clients with linked WHD cases, clients with "
+                    "visa-program violations, times_typical (that count against the overall rate for the same "
+                    "client mix), debarred clients and back wages. Without key it ranks representatives with at "
+                    "least min_clients clients, optionally filtered by name. With key (from a ranked row or "
+                    "get_employer) it returns that representative's clients that have WHD cases or debarments.",
+     "input_schema": _schema({
+         "kind": {"type": "string", "enum": ["firm", "person"], "description": "Default firm"},
+         "query": {"type": "string", "description": "Part of the firm or person name"},
+         "key": {"type": "string", "description": "One representative's key, to list its clients"},
+         "program": _PROGRAM,
+         "min_clients": {"type": "integer", "description": "Default 10"},
+         "sort_by": {"type": "string", "enum": ["clients_visa_violations", "times_typical", "clients",
+                                                "back_wages", "clients_debarred"],
+                     "description": "Highest first (default clients_visa_violations)"},
+         "limit": _LIMIT})},
     {"name": "data_overview",
      "description": "Totals for the whole database: employers, applications, employers with linked "
                     "cases, cases, back wages and penalties.",
@@ -136,7 +154,31 @@ def get_employer(con, args):
         "red_flags": [{k: f[k] for k in ("title", "applications", "of", "baseline", "detail")}
                       for f in q.red_flags(con, eid)],
         "dol_debarments": debarred,
+        "representatives": [{k: r[k] for k in _REP_KEEP} for r in q.employer_representatives(con, eid)],
     }
+
+
+_REP_KEEP = ("kind", "key", "name", "clients", "applications", "clients_with_cases", "clients_visa_violations",
+             "expected_visa_violations", "times_typical", "clients_debarred", "cases", "back_wages")
+
+
+def representatives(con, args):
+    kind = args.get("kind") or "firm"
+    if args.get("key"):
+        r = q.representative(con, kind, args["key"])
+        if not r:
+            raise LookupError(f"No {kind} with key {args['key']!r}; use the key from a ranked row or get_employer")
+        flagged = [c for c in r["client_list"] if c["cases"] or c["debarred"]]
+        return {**{k: r[k] for k in _REP_KEEP}, "name_variants": r["name_variants"][:5], "feins": r["feins"][:5],
+                "clients_with_records": flagged[:_limit(args, MAX_ROWS)],
+                "clients_with_records_not_shown": max(0, len(flagged) - _limit(args, MAX_ROWS))}
+    rows = q.representatives(con, kind, min_clients=int(args.get("min_clients") or 10),
+                             query=args.get("query"), program=args.get("program"),
+                             sort=args.get("sort_by") or "clients_visa_violations")
+    n = _limit(args)
+    return {"rows": [{k: r[k] for k in _REP_KEEP} for r in rows[:n]], "total": len(rows),
+            "rows_not_shown": max(0, len(rows) - n),
+            "overall_visa_violation_rate": {p: round(v, 4) for p, v in q.rep_baselines(con)["visa_violations"].items()}}
 
 
 _APP_KEEP = ("case_number", "case_status", "visa_class", "decision_date", "job_title", "soc_title", "workers",

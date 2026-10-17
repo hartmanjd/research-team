@@ -27,6 +27,7 @@ SITE_URL = engine.SITE_URL
 async def lifespan(app):
     q.download_db()  # no-op when the database is already there
     threading.Thread(target=q.warm_red_flags, daemon=True).start()
+    threading.Thread(target=q.warm_representatives, daemon=True).start()
     yield
 
 
@@ -128,7 +129,8 @@ def employer(employer_id: int):
                 "same_tax_id": q.same_tax_id(c, employer_id), "cases": cases,
                 "case_years": q.case_years(c, employer_id), "profile": q.employer_profile(c, employer_id),
                 "red_flags": q.red_flags(c, employer_id),
-                "debarments": q.employer_debarments(c, employer_id)}
+                "debarments": q.employer_debarments(c, employer_id),
+                "representatives": q.employer_representatives(c, employer_id)}
     finally:
         c.close()
 
@@ -191,6 +193,44 @@ def watchlist(program: str | None = None, state: str | None = None,
     c = con()
     try:
         return {"rows": q.watchlist(c, **filters), "totals": q.watchlist_totals(c, **filters)}
+    finally:
+        c.close()
+
+
+# ---------- Shared representatives ----------
+REP_SORTS = ("clients_visa_violations", "times_typical", "clients", "clients_with_cases", "back_wages",
+             "clients_debarred")
+
+
+@app.get("/api/representatives")
+def representatives(kind: str = "firm", min_clients: int = Query(10, ge=1), q_: str = Query("", alias="q"),
+                    program: str | None = None, sort: str = "clients_visa_violations",
+                    limit: int = Query(200, ge=1, le=2000)):
+    """Law firms, agent businesses (kind=firm) or attorneys and agents (kind=person) across all the
+    employers they file for, with how many of those employers have WHD cases and visa-program violations."""
+    check_program(program)
+    if kind not in q.REP_KINDS:
+        raise HTTPException(422, "kind must be firm or person")
+    if sort not in REP_SORTS:
+        raise HTTPException(422, f"sort must be one of {', '.join(REP_SORTS)}")
+    c = con()
+    try:
+        rows = q.representatives(c, kind, min_clients=min_clients, query=q_ or None, program=program or None,
+                                 sort=sort)
+        return {"total": len(rows), "rows": rows[:limit], "baseline": q.rep_baselines(c)}
+    finally:
+        c.close()
+
+
+@app.get("/api/representatives/{kind}/{key:path}")
+def representative(kind: str, key: str):
+    """One representative with every client employer and each client's WHD record."""
+    c = con()
+    try:
+        r = q.representative(c, kind, key)
+        if not r:
+            raise HTTPException(404, "No representative with that key")
+        return r
     finally:
         c.close()
 

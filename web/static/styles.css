@@ -223,7 +223,7 @@ td .emp-sub { font-size: 12px; color: var(--ink-3); }
 .filters { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-end; padding: 16px 18px; margin-top: 24px; }
 .field { display: grid; gap: 6px; }
 .field label { font-size: 12px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
-.field select, .field input[type=number] {
+.field select, .field input[type=number], .field input[type=search] {
   padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); min-width: 120px; outline: none;
 }
 .field select:focus, .field input:focus { border-color: var(--accent); }

@@ -120,6 +120,21 @@ class ApiTests(unittest.TestCase):
         self.assertTrue({"program", "entity", "status", "employers", "source_url"} <= set(rows[0]))
         self.assertIn("debarments", self.client.get(f"/api/employers/{self.acme_tx()['employer_id']}").json())
 
+    def test_representatives(self):
+        d = self.client.get("/api/representatives", params={"min_clients": 1}).json()
+        firm = next(r for r in d["rows"] if r["name"] == "Law Firm LLP")
+        self.assertEqual(firm["clients"], 1)
+        self.assertIn("H-1B", d["baseline"]["visa_violations"])
+        people = self.client.get("/api/representatives", params={"kind": "person", "min_clients": 1}).json()["rows"]
+        self.assertTrue(people)
+        one = self.client.get(f"/api/representatives/firm/{firm['key']}").json()
+        self.assertEqual([c["employer_id"] for c in one["client_list"]], [self.acme_tx()["employer_id"]])
+        self.assertEqual(self.client.get("/api/representatives/firm/NOBODY").status_code, 404)
+        self.assertEqual(self.client.get("/api/representatives", params={"kind": "lawyer"}).status_code, 422)
+        self.assertEqual(self.client.get("/api/representatives", params={"sort": "name"}).status_code, 422)
+        emp = self.client.get(f"/api/employers/{self.acme_tx()['employer_id']}").json()
+        self.assertIn(firm["key"], [r["key"] for r in emp["representatives"]])
+
     def csv_rows(self, path, **params):
         r = self.client.get(path, params=params)
         self.assertEqual(r.status_code, 200)
