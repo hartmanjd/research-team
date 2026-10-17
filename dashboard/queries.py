@@ -14,8 +14,8 @@ DEBARMENTS_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", 
 
 # A gzipped copy of research.db published as a GitHub release asset, for hosts (like Render)
 # that only have the git checkout. The checksum is of the .gz file at that URL.
-DB_URL = "https://github.com/hartmanjd/research-team/releases/download/data-2026-10-16/research.db.gz"
-DB_SHA256 = "1d71bef037e6184b9ed319c2381ee61869084169a45f397d1bdb391ef876a26c"
+DB_URL = "https://github.com/hartmanjd/research-team/releases/download/data-2026-10-17/research.db.gz"
+DB_SHA256 = "d521001549efd5ba8f60de8272d2b9c88d298b9d866f08643023c6136e91d948"
 
 
 def connect(path=None):
