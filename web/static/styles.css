@@ -484,3 +484,14 @@ a.cite:hover { text-decoration: none; outline: 1px solid var(--accent); }
 .m-fill.all { background: var(--accent); }
 .m-fill.this { background: var(--bad); }
 @media (max-width: 640px) { .bench-row { grid-template-columns: 1fr; gap: 6px; } }
+
+/* ---------- red flags ---------- */
+.rf { border-left: 4px solid var(--warn); }
+.rf-list { display: grid; gap: 14px; }
+.rf-item p { margin: 6px 0 8px; color: var(--ink-2); font-size: 14px; max-width: 860px; }
+.rf-bars { display: grid; grid-template-columns: 110px minmax(80px, 320px) 48px; gap: 6px 10px; align-items: center; font-size: 13px; }
+.rf-label { color: var(--ink-3); }
+.rf-track { height: 10px; background: var(--line-2); border-radius: 5px; overflow: hidden; }
+.rf-fill { display: block; height: 100%; border-radius: 5px; }
+.rf-fill.this { background: var(--warn); }
+.rf-fill.all { background: var(--ink-3); }

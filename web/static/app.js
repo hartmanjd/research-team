@@ -253,6 +253,7 @@ async function employerPage(id) {
       <div class="card tile ${s.penalties ? "bad" : ""}"><div class="label">Penalties assessed</div><div class="value">${compactMoney(s.penalties)}</div><div class="sub">civil money penalties</div></div>
     </div>
 
+    ${redFlagsPanel(d.red_flags, e.program)}
     ${d.case_years.length ? `<div class="card panel" style="margin-top:16px"><h3>Linked cases by year</h3>
       <div class="sub">Year the WHD findings period ended. Hover a bar for its back wages.</div>${yearColumns(d.case_years)}</div>` : ""}
 
@@ -1119,6 +1120,27 @@ async function askPage() {
 }
 
 route();
+
+// ---------- red flags ----------
+// Patterns in the employer's own applications, each shown against the same share for the whole program.
+function redFlagsPanel(flags, program) {
+  if (!flags.length) return "";
+  const bar = (v, cls) => `<span class="rf-track"><span class="rf-fill ${cls}" style="width:${Math.max(1, 100 * v)}%"></span></span>`;
+  return `<section class="card panel rf" style="margin-top:16px">
+    <h3>Red flags in its applications</h3>
+    <div class="sub">Patterns in this employer's own FY2025 applications that are worth a closer look. None is
+      evidence of a violation on its own. Each needs at least ${n(Math.min(...flags.map((f) => f.min_applications)))} applications to count.</div>
+    <div class="rf-list">${flags.map((f) => `
+      <div class="rf-item">
+        <div class="rf-title"><span class="badge warn"><span class="dot"></span>${esc(f.title)}</span></div>
+        <p>${esc(f.detail)}</p>
+        <div class="rf-bars">
+          <span class="rf-label">This employer</span>${bar(f.share, "this")}<b>${Math.round(100 * f.share)}%</b>
+          <span class="rf-label">All ${esc(program)}</span>${bar(f.baseline || 0, "all")}<span class="muted">${f.baseline == null ? "–" : Math.round(100 * f.baseline) + "%"}</span>
+        </div>
+      </div>`).join("")}</div>
+  </section>`;
+}
 
 // ---------- DOL debarments ----------
 const debarStatus = (d) => d.status === "active" ? '<span class="badge bad">Active</span>'
